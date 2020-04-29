@@ -1,7 +1,7 @@
 (in-package :wfc-cl)
 
-(defun im-width (im) (second (array-dimensions im)))
-(defun im-height (im) (first (array-dimensions im)))
+(defun ncols (im) (second (array-dimensions im)))
+(defun nrows (im) (first (array-dimensions im)))
 
 (defun enumerate-range (start end)
   ;; Returns a list [start, end>
@@ -20,17 +20,35 @@
             (combinations (enumerate-range 0 height) (enumerate-range 0 width)))
     slice))
 
-(defun make-slices (image filter-width filter-height)
-  ;; Just collect the set of (filter-width, filter-height slices present in image)
+(defun make-slices (image filter-ncols filter-nrows)
+  ;; Just collect the set of (filter-ncols, filter-nrows slices present in image)
   (let ((slices (make-hash-table :test #'numcl:equalp)))
     (mapcar (lambda (offs)
               (setf (gethash (2d-window image (first offs) (second offs)
-                                        filter-width filter-height)
+                                        filter-ncols filter-nrows)
                              slices)
                     t))
-            (combinations (enumerate-range 0 (1+ (- (im-height image) filter-height)))
-                          (enumerate-range 0 (1+ (- (im-width image) filter-width)))))
+            (combinations (enumerate-range 0 (1+ (- (nrows image) filter-nrows)))
+                          (enumerate-range 0 (1+ (- (ncols image) filter-ncols)))))
     (alexandria:hash-table-keys slices)))
 
-(defun wave-function-collapse (image filter-width filter-height output-width output-height)
-  (let ((slices (make-slices image filter-width filter-height)))))
+(defun allowable-offsets (root-img filter)
+  ;; This would be clearer using loop honestly
+  (let ((filter-nrows (nrows filter))
+        (filter-ncols (ncols filter)))
+    (remove-if-not
+     (lambda (filter-offset)
+       (destructuring-bind (row-off col-off) filter-offset
+         (every (lambda (root-idxs)
+                  (destructuring-bind (row col) root-idxs
+                    (equalp (numcl:aref root-img row col)
+                            (numcl:aref filter (- row row-off) (- col col-off)))))
+                (combinations (enumerate-range (max 0 row-off)
+                                               (min (nrows root-img) (+ filter-nrows row-off)))
+                              (enumerate-range (max 0 col-off)
+                                               (min (ncols root-img) (+ filter-ncols col-off)))))))
+     (combinations (enumerate-range (- 1 (nrows root-img)) (nrows root-img))
+                   (enumerate-range (- 1 (ncols root-img)) (ncols root-img))))))
+
+;; (defun wave-function-collapse (image filter-ncols filter-nrows output-width output-height)
+;;   (let ((slices (make-slices image filter-ncols filter-nrows)))))
