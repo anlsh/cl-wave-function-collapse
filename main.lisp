@@ -120,24 +120,25 @@
          (slices (make-slices image filter-ncols filter-nrows))
          (num-slices (length slices))
          (empty-bitset (make-array num-slices :initial-element 0 :element-type 'bit))
-         (lookup (index-to-lookup (make-index (make-index slices)) num-slices))
+         (lookup (index-to-lookup (make-index slices) num-slices))
          (wave (make-wave-fn num-slices out-nrows out-ncols)))
     (labels ((entropy-fn (bitset)
                (1- (reduce #'+ bitset)))
              (min-ent-locs ()
                (let (min-locs)
                  (loop with min-ent = (1+ num-slices)
-                       with min-locs = '()
                        for r from 0 to (1- out-nrows)
                        do (loop for c from 0 to (1- out-ncols)
                                 for cell-ent = (funcall #'entropy-fn (aref wave r c))
                                 for loc = (list r c)
-                                do (cond ((< cell-ent min-ent) (setf min-ent cell-ent
-                                                                     min-locs (list loc)))
-                                         ((= cell-ent min-ent) (push loc min-locs)))))
+                                do (if (> cell-ent 0)
+                                       (cond ((< cell-ent min-ent) (setf min-ent cell-ent
+                                                                         min-locs (list loc)))
+                                             ((= cell-ent min-ent) (push loc min-locs))))))
                  min-locs)))
-      (loop for update-loc = (alexandria:random-elt (min-ent-locs))
-            while update-loc
+      (loop for min-locs = (min-ent-locs)
+            while min-locs
+            for update-loc = (alexandria:random-elt min-locs)
             for (urow ucol) = update-loc
             for chosen-slice-idx = (random-from-bitset (aref wave urow ucol))
             for singleton = (singleton-bitset chosen-slice-idx num-slices)
