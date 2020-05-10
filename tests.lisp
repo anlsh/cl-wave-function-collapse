@@ -1,4 +1,4 @@
-(in-package :wfc-cl)
+(in-package :wfc)
 
 (clunit:defsuite logic ())
 

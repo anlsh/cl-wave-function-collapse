@@ -1,5 +1,5 @@
 ;;;; package.lisp
 
-(defpackage #:wfc-cl
+(defpackage #:wfc
   (:use #:generic-cl #:volt)
   (:local-nicknames (#:nrt #:named-readtables)))

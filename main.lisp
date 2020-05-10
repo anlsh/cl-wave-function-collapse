@@ -1,4 +1,4 @@
-(in-package :wfc-cl)
+(in-package :wfc)
 (nrt:in-readtable volt:readtable)
 
 ;; Abstraction functions

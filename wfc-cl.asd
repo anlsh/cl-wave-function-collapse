@@ -1,6 +1,6 @@
 ;;;; wfc-cl.asd
 
-(asdf:defsystem #:wfc-cl
+(asdf:defsystem #:wfc
   :description "Describe wfc-cl here"
   :author "Your Name <your.name@example.com>"
   :license  "Specify license here"
