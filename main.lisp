@@ -1,8 +1,9 @@
 (in-package :wfc-cl)
+(nrt:in-readtable volt:readtable)
 
 ;; Abstraction functions
-(defun ncols (im) (second (array-dimensions im)))
-(defun nrows (im) (first (array-dimensions im)))
+(defun ncols (im) [(array-dimensions im) 1])
+(defun nrows (im) [(array-dimensions im) 0])
 
 (defun num-possibs (set)
   (reduce #'+ set :initial-value 0))
@@ -12,7 +13,7 @@
   (loop for i from 0
         with count = 0
         with rand = (1+ (random (num-possibs set)))
-        do (progn (incf count (aref set i))
+        do (progn (incf count [set i])
                   (when (<= rand count) (return-from random-from-set i)))))
 (defun singleton-set (i n-slices)
   (let ((s (make-array n-slices :initial-element 0 :element-type 'bit)))
@@ -24,7 +25,7 @@
   (make-array n-slices :initial-element 1 :element-type 'bit))
 
 (defun range (start end)
-  ;; Returns a list [start, end>
+  ;; Returns a list start, end>
   (if (>= start end)
       nil
       (cons start (range (1+ start) end))))
@@ -50,15 +51,13 @@
 
 (defun make-slices (image f-nrows f-ncols )
   ;; Just collect the set of (f-ncols, f-nrows slices present in image)
-  ;; Returns a list of the [f-nrows, f-ncols] slices of the image with no duplicate
-  (let ((slices (make-hash-table :test #'equalp)))
+  ;; Returns a list of the f-nrows, f-ncols slices of the image with no duplicate
+  (let ((slices {}))
     (mapcar (lambda (offs)
-              (setf (gethash (2d-window image (first offs) (second offs) f-nrows f-ncols)
-                             slices)
-                    t))
+              (setf [slices (2d-window image (first offs) (second offs) f-nrows f-ncols)] t))
             (product (range 0 (1+ (- (nrows image) f-nrows)))
                      (range 0 (1+ (- (ncols image) f-ncols)))))
-    (alexandria:hash-table-keys slices)))
+    (map-keys slices)))
 
 (defun allowable-offsets (root filter)
   ;; Returns a list of allowable offsets ((r0, c0), (r1, c1), ...) such that when the
@@ -88,12 +87,12 @@
   ;; Given a list of slices of length n, generate a hash map "index" where
   ;; index[i][j] = (allowable-offsets slices[i] slices[j])
   ;; TODO This function doesn't take advantage of relationship between index[i][j] and index[j][i]
-  (let ((valid-offsets (make-hash-table :test #'equal)))
+  (let ((valid-offsets {}))
     (loop for slice1 in slices
           for i0 from 0
           do (loop for slice2 in slices
                    for i1 from 0
-                   do (setf (gethash (list i0 i1) valid-offsets) (allowable-offsets slice1 slice2))))
+                   do (setf [valid-offsets (list i0 i1)] (allowable-offsets slice1 slice2))))
     valid-offsets))
 
 (defun index-to-lookup (index num-slices)
@@ -102,16 +101,14 @@
   ;; (allowable-offsets i jf)
   ;; lookup[i][off] might not exist in the table, in which the key set is empty
   (let ((lookup {}))
-    (loop for (i j) in (alexandria:hash-table-keys index)
-          for offsets = (gethash (list i j) index)
-          do (volt:put-if-absent i {} lookup)
-             (loop for i-lookup = (gethash i lookup)
+    (loop for (i j) in (map-keys index)
+          for offsets = [index (list i j)]
+          do (ensure-get i lookup {})
+             (loop for i-lookup = [lookup i]
                    for off in offsets
                    do
-                      (volt:put-if-absent off
-                                          (make-array num-slices :element-type 'bit)
-                                          i-lookup)
-                      (setf (aref (gethash off i-lookup) j) 1)))
+                      (ensure-get off i-lookup (make-array num-slices :element-type 'bit))
+                      (setf [[i-lookup off] j] 1)))
     lookup))
 
 (defun wave-function-collapse (image filter-ncols filter-nrows out-nrows out-ncols)
@@ -148,8 +145,7 @@
                             for lcol = (+ ucol fcol-off)
                             when (array-in-bounds-p wave lrow lcol)
                               do (setf (aref wave lrow lcol)
-                                       (set-inter (or (gethash (list lrow lcol)
-                                                             (gethash chosen-slice-idx lookup))
+                                       (set-inter (or [[chosen-slice-idx lookup] (list lrow lcol)]
                                                     empty-set)
                                                 (aref wave lrow lcol))))))
       wave)))

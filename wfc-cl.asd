@@ -6,7 +6,7 @@
   :license  "Specify license here"
   :version "0.0.1"
   :serial t
-  :depends-on (:volt :alexandria :numcl :clunit :generic-cl)
+  :depends-on (:volt :alexandria :clunit :generic-cl :named-readtables)
   :components ((:file "package")
-               (:file "wfc-cl" :depends-on ("package"))
-               (:file "tests" :depends-on ("wfc-cl"))))
+               (:file "main" :depends-on ("package"))
+               (:file "tests" :depends-on ("main"))))
