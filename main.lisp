@@ -21,7 +21,7 @@
 
 (defun singleton-set (i n-slices)
   (let ((s (make-array n-slices :initial-element 0 :element-type 'bit)))
-    (setf (aref s i) 1)
+    (setf [s i] 1)
     s))
 
 (defun empty-set (n-slices)
@@ -30,21 +30,14 @@
 (defun full-set (n-slices)
   (make-array n-slices :initial-element 1 :element-type 'bit))
 
-(defun range (start end)
-  ;; Returns a list start, end>
-  (if (>= start end)
-      nil
-      (cons start (range (1+ start) end))))
-
 (defun product (seq1 seq2)
   (reduce #'append (mapcar (lambda (e2) (mapcar (lambda (e1) (list e1 e2)) seq1)) seq2)))
 
 (defun make-empty-array (nrows ncols &key (value-thunk nil) (el-type t))
   (let ((wave (make-array (list nrows ncols) :element-type el-type)))
     (when value-thunk
-      (loop for r from 0 to (1- nrows)
-            do (loop for c from 0 to (1- ncols)
-                     do (setf (aref wave r c) (funcall value-thunk)))))
+      (loop for i below (array-total-size wave)
+            do (setf [wave i] (funcall value-thunk))))
     wave))
 
 (defun 2d-window (arr row col nrows ncols)
