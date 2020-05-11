@@ -145,7 +145,7 @@
                             for lcol = (+ ucol fcol-off)
                             when (array-in-bounds-p wave lrow lcol)
                               do (setf (aref wave lrow lcol)
-                                       (set-inter (or [[chosen-slice-idx lookup] (list lrow lcol)]
+                                       (set-inter (or [[lookup chosen-slice-idx] (list lrow lcol)]
                                                     empty-set)
                                                 (aref wave lrow lcol))))))
       wave)))
