@@ -4,23 +4,29 @@
 ;; Abstraction functions
 (defun ncols (im) [(array-dimensions im) 1])
 (defun nrows (im) [(array-dimensions im) 0])
+(declaim (inline ncols) (inline nrows))
 
 (defun num-possibs (set)
   (reduce #'+ set :initial-value 0))
+
 (defun set-inter (set1 set2)
   (bit-and set1 set2))
+
 (defun random-from-set (set)
   (loop for i from 0
         with count = 0
         with rand = (1+ (random (num-possibs set)))
         do (progn (incf count [set i])
                   (when (<= rand count) (return-from random-from-set i)))))
+
 (defun singleton-set (i n-slices)
   (let ((s (make-array n-slices :initial-element 0 :element-type 'bit)))
     (setf (aref s i) 1)
     s))
+
 (defun empty-set (n-slices)
   (make-array n-slices :initial-element 0 :element-type 'bit))
+
 (defun full-set (n-slices)
   (make-array n-slices :initial-element 1 :element-type 'bit))
 
@@ -139,13 +145,13 @@
             for (urow ucol) = update-loc
             for chosen-slice-idx = (random-from-set (aref wave urow ucol))
             for singleton = (singleton-set chosen-slice-idx num-slices)
-            do (progn (setf (aref wave urow ucol) singleton)
-                      (loop for (frow-off fcol-off) in mb-filter-offs
-                            for lrow = (+ urow frow-off)
-                            for lcol = (+ ucol fcol-off)
-                            when (array-in-bounds-p wave lrow lcol)
-                              do (setf (aref wave lrow lcol)
-                                       (set-inter (or [[lookup chosen-slice-idx] (list lrow lcol)]
-                                                    empty-set)
-                                                (aref wave lrow lcol))))))
+            do (setf (aref wave urow ucol) singleton)
+               (loop for (row-off col-off) in mb-filter-offs
+                     for lrow = (+ urow row-off)
+                     for lcol = (+ ucol col-off)
+                     when (array-in-bounds-p wave lrow lcol)
+                       do (setf (aref wave lrow lcol)
+                                (set-inter (or [[lookup chosen-slice-idx] (list row-off col-off)]
+                                               empty-set)
+                                           (aref wave lrow lcol)))))
       wave)))
