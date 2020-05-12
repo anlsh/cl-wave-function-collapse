@@ -33,8 +33,8 @@
 (defun product (seq1 seq2)
   (reduce #'append (mapcar (lambda (e2) (mapcar (lambda (e1) (list e1 e2)) seq1)) seq2)))
 
-(defun make-empty-array (nrows ncols &key (value-thunk nil) (el-type t))
-  (let ((wave (make-array (list nrows ncols) :element-type el-type)))
+(defun array-from-thunk (dims &key (value-thunk nil) (el-type t))
+  (let ((wave (make-array dims :element-type el-type)))
     (when value-thunk
       (loop for i below (array-total-size wave)
             do (setf [wave i] (funcall value-thunk))))
@@ -84,31 +84,36 @@
 
 (defun make-index (slices)
   ;; Given a list of slices of length n, generate a hash map "index" where
-  ;; index[i][j] = (allowable-offsets slices[i] slices[j])
-  ;; TODO This function doesn't take advantage of relationship between index[i][j] and index[j][i]
-  (let ((valid-offsets {}))
-    (loop for slice1 in slices
-          for i0 from 0
-          do (loop for slice2 in slices
-                   for i1 from 0
-                   do (setf [valid-offsets (list i0 i1)] (allowable-offsets slice1 slice2))))
-    valid-offsets))
+  ;; index[i,j] = (allowable-offsets slices[i] slices[j])
+  (loop with valid-offsets = {}
+        for slice-ls on slices
+        for s0 = (car slice-ls)
+        for i0 from 0
+        do (loop for slice1 in slices
+                 for i1 from 0
+                 unless (find (list i0 i1) (map-keys valid-offsets))
+                   do (let ((offs (allowable-offsets s0 slice1)))
+                        (setf [valid-offsets (list i0 i1)] offs)
+                        (setf [valid-offsets (list i1 i0)]
+                              (loop for (roff coff) in offs
+                                    collect (list (* -1 roff) (* -1 coff))))))
+        finally (return valid-offsets)))
 
 (defun index-to-lookup (index num-slices)
   ;; Given an index of the sort described by make-index, construct a hash table "lookup"
   ;; where lookup[i][off] is the set of slice indexes {j0, ..., jf} such that "off" is in
   ;; (allowable-offsets i jf)
   ;; lookup[i][off] might not exist in the table, in which the key set is empty
-  (let ((lookup {}))
-    (loop for (i j) in (map-keys index)
-          for offsets = [index (list i j)]
-          do (ensure-get i lookup {})
-             (loop for i-lookup = [lookup i]
-                   for off in offsets
-                   do
-                      (ensure-get off i-lookup (make-array num-slices :element-type 'bit))
-                      (setf [[i-lookup off] j] 1)))
-    lookup))
+  (loop with lookup = {}
+        for (i j) in (map-keys index)
+        for offsets = [index (list i j)]
+        do (ensure-get i lookup {})
+           (loop for i-lookup = [lookup i]
+                 for off in offsets
+                 do
+                    (ensure-get off i-lookup (make-array num-slices :element-type 'bit))
+                    (setf [[i-lookup off] j] 1))
+        finally (return lookup)))
 
 (defun wave-function-collapse (image filter-ncols filter-nrows out-nrows out-ncols)
   (let* ((mb-filter-offs (product (range 0 (1- filter-nrows)) (range 0 (1- filter-ncols))))
@@ -116,7 +121,7 @@
          (num-slices (length slices))
          (empty-set (empty-set num-slices))
          (lookup (index-to-lookup (make-index slices) num-slices))
-         (wave (make-empty-array out-nrows out-ncols
+         (wave (array-from-thunk (list out-nrows out-ncols)
                                  :value-thunk (lambda () (full-set num-slices)))))
     (labels ((entropy-fn (bitset)
                (1- (reduce #'+ bitset)))
