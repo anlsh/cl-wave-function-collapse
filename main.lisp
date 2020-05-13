@@ -126,17 +126,17 @@
     (labels ((entropy-fn (bitset)
                (1- (reduce #'+ bitset)))
              (min-ent-locs ()
-               (let (min-locs)
-                 (loop with min-ent = (1+ num-slices)
-                       for r from 0 to (1- out-nrows)
-                       do (loop for c from 0 to (1- out-ncols)
-                                for cell-ent = (funcall #'entropy-fn (aref wave r c))
-                                for loc = (list r c)
-                                do (when (> cell-ent 0)
-                                       (cond ((< cell-ent min-ent) (setf min-ent cell-ent
-                                                                         min-locs (list loc)))
-                                             ((= cell-ent min-ent) (push loc min-locs))))))
-                 min-locs)))
+               (loop with min-locs = nil
+                      with min-ent = (1+ num-slices)
+                      for i below (array-total-size wave)
+                      for cell-ent = (funcall #'entropy-fn [wave i])
+                      for loc = (list r c)
+                      do (when (> cell-ent 0)
+                           (cond ((< cell-ent min-ent) (setf min-ent cell-ent
+                                                             min-locs (list loc)))
+                                 ((= cell-ent min-ent) (push loc min-locs))))
+                      finally (return min-locs))))
+
       (loop for min-locs = (min-ent-locs)
             while min-locs
             for update-loc = (alexandria:random-elt min-locs)

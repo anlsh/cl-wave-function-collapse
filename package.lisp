@@ -2,4 +2,4 @@
 
 (defpackage #:wfc
   (:use #:generic-cl #:volt)
-  (:local-nicknames (#:nrt #:named-readtables)))
+  (:local-nicknames (#:nrt #:named-readtables) (#:alx #:alexandria-1)))
