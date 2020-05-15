@@ -31,7 +31,8 @@
   (make-array n-slices :initial-element 1 :element-type 'bit))
 
 (defun product (seq1 seq2)
-  (reduce #'append (mapcar (lambda (e2) (mapcar (lambda (e1) (list e1 e2)) seq1)) seq2)))
+  (reduce #'append (mapcar (lambda (e2) (mapcar (lambda (e1) (list e1 e2)) seq1))
+                           seq2)))
 
 (defun array-from-thunk (dims &key (value-thunk nil) (el-type t))
   (let ((wave (make-array dims :element-type el-type)))
@@ -153,3 +154,61 @@
                                                empty-set)
                                            (aref wave lrow lcol)))))
       wave)))
+
+(nrt:in-readtable volt:readtable)
+(let* ((pixel-size 20)
+       (source-path #P"~/Downloads/flowers.png")
+       (source-png (png:load-file source-path))
+       (source-data (png:data source-png))
+       (source-width (png:width source-png)) (source-height (png:height source-png)))
+
+  (sd:with-init (:everything)
+    (sd:with-window (win :w 800 :h 600 :flags '(:shown :opengl))
+      (sd:with-gl-context (ctx win)
+        (sdl2:gl-make-current win ctx)
+        (gl:viewport 0 0 800 600)
+        (gl:matrix-mode :projection)
+        (gl:ortho -2 2 -2 2 -2 2)
+        (gl:matrix-mode :modelview)
+        (gl:load-identity)
+        (gl:clear-color 0.0 0.0 1.0 1.0)
+        (gl:clear :color-buffer)
+        (sdl2:with-event-loop (:method :poll)
+          (:keydown (:keysym keysym)
+                    (let ((scancode (sdl2:scancode-value keysym))
+                          (sym (sdl2:sym-value keysym))
+                          (mod-value (sdl2:mod-value keysym)))
+                      (cond
+                        ((sdl2:scancode= scancode :scancode-w) (format t "~a~%" "WALK"))
+                        ((sdl2:scancode= scancode :scancode-s) (sdl2:show-cursor))
+                        ((sdl2:scancode= scancode :scancode-h) (sdl2:hide-cursor)))
+                      (format t "Key sym: ~a, code: ~a, mod: ~a~%"
+                              sym
+                              scancode
+                              mod-value)))
+
+          (:idle ()
+                 (gl:clear :color-buffer)
+                 (gl:begin :triangles)
+                 (gl:color 1.0 0.0 0.0)
+                 (gl:vertex 0.0 1.0)
+                 (gl:vertex -1.0 -1.0)
+                 (gl:vertex 1.0 -1.0)
+                 (gl:end)
+                 (gl:flush)
+                 (sdl2:gl-swap-window win))
+
+          (:quit () t)))))
+
+
+  ;; (loop
+  ;;   for i below (array-total-size source-data)
+  ;;   for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
+  ;;   for color = [[source-data row] col]
+  ;;   do
+  ;;      (/ 1 0)
+  ;;      (sk:with-pen (sk:make-pen :fill (sk:rgb ;; (/ col source-height)
+  ;;                                       ;; 0 (/ row source-width)
+  ;;                                       (aref color 0) (aref color 1) (aref color 2)))
+  ;;        (sk:rect (* col pixel-size) (* row pixel-size) pixel-size pixel-size)))
+  )

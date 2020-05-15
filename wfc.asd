@@ -6,7 +6,8 @@
   :license  "Specify license here"
   :version "0.0.1"
   :serial t
-  :depends-on (:volt :alexandria :clunit :generic-cl :named-readtables)
+  :depends-on (:volt :alexandria :clunit :generic-cl :named-readtables
+                     :cl-opengl :sdl2 :pngload-fast)
   :components ((:file "package")
                (:file "main" :depends-on ("package"))
                (:file "tests" :depends-on ("main"))))
