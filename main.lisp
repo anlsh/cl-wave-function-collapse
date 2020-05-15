@@ -190,25 +190,30 @@
           (:idle ()
                  (gl:clear :color-buffer)
                  (gl:begin :triangles)
-                 (gl:color 1.0 0.0 0.0)
+                 (gl:color 255 0 0)
                  (gl:vertex 0.0 1.0)
                  (gl:vertex -1.0 -1.0)
                  (gl:vertex 1.0 -1.0)
                  (gl:end)
+                 (loop for i below (array-total-size source-data)
+                       for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
+                       for color = (generic-cl:elt (list col) (generic-cl:elt (list row) source-data))
+                       do (+ 1 2))
+
+
+                 ;; (loop
+                 ;;   for i below (array-total-size source-data)
+                 ;;   for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
+                 ;;   for color = [[source-data row] col]
+                 ;;   do
+                 ;;      (+ 1 2)
+                 ;;      (/ 1 0)
+                 ;;      (sk:with-pen (sk:make-pen :fill (sk:rgb ;; (/ col source-height)
+                 ;;                                       ;; 0 (/ row source-width)
+                 ;;                                       (aref color 0) (aref color 1) (aref color 2)))
+                 ;;        (sk:rect (* col pixel-size) (* row pixel-size) pixel-size pixel-size)))
+                 ;;   )
                  (gl:flush)
                  (sdl2:gl-swap-window win))
 
-          (:quit () t)))))
-
-
-  ;; (loop
-  ;;   for i below (array-total-size source-data)
-  ;;   for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
-  ;;   for color = [[source-data row] col]
-  ;;   do
-  ;;      (/ 1 0)
-  ;;      (sk:with-pen (sk:make-pen :fill (sk:rgb ;; (/ col source-height)
-  ;;                                       ;; 0 (/ row source-width)
-  ;;                                       (aref color 0) (aref color 1) (aref color 2)))
-  ;;        (sk:rect (* col pixel-size) (* row pixel-size) pixel-size pixel-size)))
-  )
+          (:quit () t))))))
