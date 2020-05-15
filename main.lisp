@@ -9,8 +9,23 @@
 (defun num-possibs (set)
   (reduce #'+ set :initial-value 0))
 
+(defun entropy-fn (bitset)
+  (1- (reduce #'+ bitset)))
+
+(defun set-to-index (bitset)
+  (loop for i from 0 below (length bitset)
+        when (not (zerop [bitset i])) do (return i)
+          finally (return #(255 0 255))))
+
 (defun set-inter (set1 set2)
   (bit-and set1 set2))
+
+(defun range (start end)
+  (labels ((rec (start end acc)
+             (if (<= end start)
+                 acc
+                 (rec start (1- end) (cons (1- end) acc)))))
+    (rec start end nil)))
 
 (defun random-from-set (set)
   (loop for i from 0
@@ -42,10 +57,10 @@
     wave))
 
 (defun 2d-window (arr row col nrows ncols)
-  (let* ((slice (make-array (list nrows ncols))))
+  (let ((slice (make-array (list nrows ncols))))
     (mapcar (lambda (offsets)
               (destructuring-bind (srow scol) offsets
-                (setf (aref slice srow scol) (aref arr (+ row srow) (+ col scol)))))
+                (setf [slice (list srow scol)] [arr (list (+ row srow) (+ col scol))])))
             (product (range 0 nrows) (range 0 ncols)))
     slice))
 
@@ -63,7 +78,6 @@
   ;; Returns a list of allowable offsets ((r0, c0), (r1, c1), ...) such that when the
   ;; top-left corner of filter is placed at a row, col offset of (ri, ci), the overlapping
   ;; portions of root and filter coincide
-  ;; TODO This function could use less memory if rewritten to use generators
   (let ((filter-nrows (nrows filter))
         (filter-ncols (ncols filter))
         (root-nrows (nrows root))
@@ -118,25 +132,29 @@
 
 (defun wave-function-collapse (image filter-ncols filter-nrows out-nrows out-ncols)
   (let* ((mb-filter-offs (product (range 0 (1- filter-nrows)) (range 0 (1- filter-ncols))))
-         (slices (make-slices image filter-ncols filter-nrows))
+         (slices (make-slices image filter-nrows filter-ncols))
+         (slice-reprs (loop with h = {}
+                            for s in slices
+                            for i from 0
+                            do (setf [h i] [s (list 0 0)])
+                            finally (return h)))
          (num-slices (length slices))
          (empty-set (empty-set num-slices))
          (lookup (index-to-lookup (make-index slices) num-slices))
          (wave (array-from-thunk (list out-nrows out-ncols)
                                  :value-thunk (lambda () (full-set num-slices)))))
-    (labels ((entropy-fn (bitset)
-               (1- (reduce #'+ bitset)))
-             (min-ent-locs ()
+    (labels ((min-ent-locs ()
                (loop with min-locs = nil
-                      with min-ent = (1+ num-slices)
-                      for i below (array-total-size wave)
-                      for cell-ent = (funcall #'entropy-fn [wave i])
-                      for loc = (list r c)
-                      do (when (> cell-ent 0)
-                           (cond ((< cell-ent min-ent) (setf min-ent cell-ent
-                                                             min-locs (list loc)))
-                                 ((= cell-ent min-ent) (push loc min-locs))))
-                      finally (return min-locs))))
+                     with min-ent = (1+ num-slices)
+                     for i below (array-total-size wave)
+                     for cell-ent = (entropy-fn [wave i])
+                     for (r c) = (alx:rmajor-to-indices (array-dimensions wave) i)
+                     for loc = (list r c)
+                     do (when (> cell-ent 0)
+                          (cond ((< cell-ent min-ent) (setf min-ent cell-ent
+                                                            min-locs (list loc)))
+                                ((= cell-ent min-ent) (push loc min-locs))))
+                     finally (return min-locs))))
 
       (loop for min-locs = (min-ent-locs)
             while min-locs
@@ -153,67 +171,52 @@
                                 (set-inter (or [[lookup chosen-slice-idx] (list row-off col-off)]
                                                empty-set)
                                            (aref wave lrow lcol)))))
-      wave)))
+      (loop for i below (array-total-size wave)
+            for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
+            with final-output = (make-array (list out-nrows out-ncols))
+            do (setf [final-output loc] [slice-reprs (set-to-index [wave loc])])
+            finally (return final-output)))))
+
+(defun encode-sequence (seq)
+  (let ((i -1)
+        (hash {}))
+    (loop for el in seq
+          when (not (memberp el hash))
+            do (setf [hash el] (incf i)))
+    hash))
 
 (nrt:in-readtable volt:readtable)
-(let* ((pixel-size 20)
+(let* ((pixel-size 10)
        (source-path #P"~/Downloads/flowers.png")
        (source-png (png:load-file source-path))
        (source-data (png:data source-png))
-       (source-width (png:width source-png)) (source-height (png:height source-png)))
 
-  (sd:with-init (:everything)
-    (sd:with-window (win :w 800 :h 600 :flags '(:shown :opengl))
-      (sd:with-gl-context (ctx win)
-        (sdl2:gl-make-current win ctx)
-        (gl:viewport 0 0 800 600)
-        (gl:matrix-mode :projection)
-        (gl:ortho -2 2 -2 2 -2 2)
-        (gl:matrix-mode :modelview)
-        (gl:load-identity)
-        (gl:clear-color 0.0 0.0 1.0 1.0)
-        (gl:clear :color-buffer)
-        (sdl2:with-event-loop (:method :poll)
-          (:keydown (:keysym keysym)
-                    (let ((scancode (sdl2:scancode-value keysym))
-                          (sym (sdl2:sym-value keysym))
-                          (mod-value (sdl2:mod-value keysym)))
-                      (cond
-                        ((sdl2:scancode= scancode :scancode-w) (format t "~a~%" "WALK"))
-                        ((sdl2:scancode= scancode :scancode-s) (sdl2:show-cursor))
-                        ((sdl2:scancode= scancode :scancode-h) (sdl2:hide-cursor)))
-                      (format t "Key sym: ~a, code: ~a, mod: ~a~%"
-                              sym
-                              scancode
-                              mod-value)))
+       (out-width 64)
+       (out-height 128))
 
-          (:idle ()
-                 (gl:clear :color-buffer)
-                 (gl:begin :triangles)
-                 (gl:color 255 0 0)
-                 (gl:vertex 0.0 1.0)
-                 (gl:vertex -1.0 -1.0)
-                 (gl:vertex 1.0 -1.0)
-                 (gl:end)
-                 (loop for i below (array-total-size source-data)
-                       for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
-                       for color = (generic-cl:elt (list col) (generic-cl:elt (list row) source-data))
-                       do (+ 1 2))
+  (defun draw-src ()
+    (let ((source-width (png:width source-png))
+          (source-height (png:height source-png)))
+      (sd:with-init (:everything)
+        (sd:with-window (win :w (* source-width pixel-size)
+                             :h (* source-height pixel-size)
+                             :flags '(:shown :opengl))
+          (sd:with-gl-context (ctx win)
+            (sd:with-renderer (rend win)
+              (sdl2:with-event-loop (:method :poll)
+                (:idle ()
+                       (loop for i below (array-total-size source-data)
+                             for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
+                             for color = (generic-cl:elt (generic-cl:elt source-data (list row)) (list col))
+                             do (gl:color (aref color 0) (aref color 1) (aref color 2))
+                                (sd:render-fill-rect rend
+                                                     (sd:make-rect (* col pixel-size) (* row pixel-size)
+                                                                   pixel-size pixel-size)))
 
+                       (gl:flush)
+                       (sdl2:gl-swap-window win))
 
-                 ;; (loop
-                 ;;   for i below (array-total-size source-data)
-                 ;;   for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
-                 ;;   for color = [[source-data row] col]
-                 ;;   do
-                 ;;      (+ 1 2)
-                 ;;      (/ 1 0)
-                 ;;      (sk:with-pen (sk:make-pen :fill (sk:rgb ;; (/ col source-height)
-                 ;;                                       ;; 0 (/ row source-width)
-                 ;;                                       (aref color 0) (aref color 1) (aref color 2)))
-                 ;;        (sk:rect (* col pixel-size) (* row pixel-size) pixel-size pixel-size)))
-                 ;;   )
-                 (gl:flush)
-                 (sdl2:gl-swap-window win))
+                (:quit () t))))))))
 
-          (:quit () t))))))
+  (defun draw-wfc ()
+    (wave-function-collapse source-data 4 4 out-height out-width)))
