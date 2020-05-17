@@ -6,19 +6,59 @@
 (defun nrows (im) [(array-dimensions im) 0])
 (declaim (inline ncols) (inline nrows))
 
-(defun num-possibs (set)
-  (reduce #'+ set :initial-value 0))
+;; (defun num-possibs (set)
+;;   (reduce #'cl:+ set :initial-value 0))
 
-(defun entropy-fn (bitset)
-  (1- (reduce #'+ bitset)))
+;; (defun set/to-index (bitset)
+;;   (loop for i from 0 below (length bitset)
+;;         when (not (zerop [bitset i])) do (return i)
+;;           finally (return #(255 0 255))))
 
-(defun set-to-index (bitset)
-  (loop for i from 0 below (length bitset)
-        when (not (zerop [bitset i])) do (return i)
-          finally (return #(255 0 255))))
+;; (defun set/inter (set1 set2)
+;;   (bit-and set1 set2))
 
-(defun set-inter (set1 set2)
-  (bit-and set1 set2))
+;; (defun set/random-elt (set)
+;;   (loop for i from 0
+;;         with count = 0
+;;         with rand = (1+ (random (num-possibs set)))
+;;         do (progn (incf count [set i])
+;;                   (when (<= rand count) (return-from set/random-elt i)))))
+
+;; (defun set/singleton (i n-slices)
+;;   (let ((s (make-array n-slices :initial-element 0 :element-type 'bit)))
+;;     (setf [s i] 1)
+;;     s))
+
+;; (defun set/empty (n-slices)
+;;   (make-array n-slices :initial-element 0 :element-type 'bit))
+
+;; (defun full-set (n-slices)
+;;   (make-array n-slices :initial-element 1 :element-type 'bit))
+
+(defun set/size (set)
+  (length set))
+
+(defun set/to-index (set)
+  (car set))
+
+(defun set/random-elt (set)
+  (alx:random-elt set))
+
+(defun set/inter (s1 s2)
+  (cond ((null s1) nil)
+        ((null s2) nil)
+        ((= (car s1) (car s2) (cons (car s1) (set/inter (cdr s1) (cdr s2)))))
+        ((< (car s1) (car s2) (set/inter (cdr s1) s2)))
+        (t (set/inter (s1 (cdr s2))))))
+
+(defun set/singleton (item n-slices)
+  (cons item nil))
+
+(defun set/empty (n-slices)
+  nil)
+
+(defun set/full (n-slices)
+  (range n-slices))
 
 (defun range (start end)
   (labels ((rec (start end acc)
@@ -26,24 +66,6 @@
                  acc
                  (rec start (1- end) (cons (1- end) acc)))))
     (rec start end nil)))
-
-(defun random-from-set (set)
-  (loop for i from 0
-        with count = 0
-        with rand = (1+ (random (num-possibs set)))
-        do (progn (incf count [set i])
-                  (when (<= rand count) (return-from random-from-set i)))))
-
-(defun singleton-set (i n-slices)
-  (let ((s (make-array n-slices :initial-element 0 :element-type 'bit)))
-    (setf [s i] 1)
-    s))
-
-(defun empty-set (n-slices)
-  (make-array n-slices :initial-element 0 :element-type 'bit))
-
-(defun full-set (n-slices)
-  (make-array n-slices :initial-element 1 :element-type 'bit))
 
 (defun product (seq1 seq2)
   (reduce #'append (mapcar (lambda (e2) (mapcar (lambda (e1) (list e1 e2)) seq1))
@@ -106,7 +128,7 @@
         for i0 from 0
         do (loop for slice1 in slices
                  for i1 from 0
-                 unless (find (list i0 i1) (map-keys valid-offsets))
+                 unless (memberp (list i0 i1) (map-keys valid-offsets))
                    do (let ((offs (allowable-offsets s0 slice1)))
                         (setf [valid-offsets (list i0 i1)] offs)
                         (setf [valid-offsets (list i1 i0)]
@@ -139,15 +161,15 @@
                             do (setf [h i] [s (list 0 0)])
                             finally (return h)))
          (num-slices (length slices))
-         (empty-set (empty-set num-slices))
+         (set/empty (set/empty num-slices))
          (lookup (index-to-lookup (make-index slices) num-slices))
          (wave (array-from-thunk (list out-nrows out-ncols)
-                                 :value-thunk (lambda () (full-set num-slices)))))
+                                 :value-thunk (lambda () (set/full num-slices)))))
     (labels ((min-ent-locs ()
                (loop with min-locs = nil
                      with min-ent = (1+ num-slices)
                      for i below (array-total-size wave)
-                     for cell-ent = (entropy-fn [wave i])
+                     for cell-ent = (1- (set/size [wave i]))
                      for (r c) = (alx:rmajor-to-indices (array-dimensions wave) i)
                      for loc = (list r c)
                      do (when (> cell-ent 0)
@@ -160,30 +182,22 @@
             while min-locs
             for update-loc = (alexandria:random-elt min-locs)
             for (urow ucol) = update-loc
-            for chosen-slice-idx = (random-from-set (aref wave urow ucol))
-            for singleton = (singleton-set chosen-slice-idx num-slices)
+            for chosen-slice-idx = (set/random-elt (aref wave urow ucol))
+            for singleton = (set/singleton chosen-slice-idx num-slices)
             do (setf (aref wave urow ucol) singleton)
                (loop for (row-off col-off) in mb-filter-offs
                      for lrow = (+ urow row-off)
                      for lcol = (+ ucol col-off)
                      when (array-in-bounds-p wave lrow lcol)
                        do (setf (aref wave lrow lcol)
-                                (set-inter (or [[lookup chosen-slice-idx] (list row-off col-off)]
-                                               empty-set)
+                                (set/inter (or [[lookup chosen-slice-idx] (list row-off col-off)]
+                                               set/empty)
                                            (aref wave lrow lcol)))))
       (loop for i below (array-total-size wave)
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
             with final-output = (make-array (list out-nrows out-ncols))
-            do (setf [final-output loc] [slice-reprs (set-to-index [wave loc])])
+            do (setf [final-output loc] [slice-reprs (set/to-index [wave loc])])
             finally (return final-output)))))
-
-(defun encode-sequence (seq)
-  (let ((i -1)
-        (hash {}))
-    (loop for el in seq
-          when (not (memberp el hash))
-            do (setf [hash el] (incf i)))
-    hash))
 
 (nrt:in-readtable volt:readtable)
 (let* ((pixel-size 10)
@@ -194,29 +208,30 @@
        (out-width 64)
        (out-height 128))
 
+  (defun draw-image (source-data)
+    (sd:with-init (:everything)
+      (sd:with-window (win :w (* [(array-dimensions source-data) 1] pixel-size)
+                           :h (* [(array-dimensions source-data) 0] pixel-size)
+                           :flags '(:shown :opengl))
+        (sd:with-gl-context (ctx win)
+          (sd:with-renderer (rend win)
+            (sdl2:with-event-loop (:method :poll)
+              (:idle ()
+                     (loop for i below (array-total-size source-data)
+                           for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
+                           for color = (generic-cl:elt (generic-cl:elt source-data (list row)) (list col))
+                           do (gl:color (aref color 0) (aref color 1) (aref color 2))
+                              (sd:render-fill-rect rend
+                                                   (sd:make-rect (* col pixel-size) (* row pixel-size)
+                                                                 pixel-size pixel-size)))
+
+                     (gl:flush)
+                     (sdl2:gl-swap-window win))
+
+              (:quit () t)))))))
+
   (defun draw-src ()
-    (let ((source-width (png:width source-png))
-          (source-height (png:height source-png)))
-      (sd:with-init (:everything)
-        (sd:with-window (win :w (* source-width pixel-size)
-                             :h (* source-height pixel-size)
-                             :flags '(:shown :opengl))
-          (sd:with-gl-context (ctx win)
-            (sd:with-renderer (rend win)
-              (sdl2:with-event-loop (:method :poll)
-                (:idle ()
-                       (loop for i below (array-total-size source-data)
-                             for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
-                             for color = (generic-cl:elt (generic-cl:elt source-data (list row)) (list col))
-                             do (gl:color (aref color 0) (aref color 1) (aref color 2))
-                                (sd:render-fill-rect rend
-                                                     (sd:make-rect (* col pixel-size) (* row pixel-size)
-                                                                   pixel-size pixel-size)))
-
-                       (gl:flush)
-                       (sdl2:gl-swap-window win))
-
-                (:quit () t))))))))
+    (draw-image source-data))
 
   (defun draw-wfc ()
-    (wave-function-collapse source-data 4 4 out-height out-width)))
+    (draw-image (wave-function-collapse source-data 1 1 out-height out-width))))
