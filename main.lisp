@@ -88,15 +88,14 @@
        (destructuring-bind (row-off col-off) filter-offset
          (every (lambda (root-idxs)
                   (destructuring-bind (row col) root-idxs
-                    (funcall #'equalp
-                             (aref root row col)
-                             (aref filter (- row row-off) (- col col-off)))))
+                    (equalp (aref root row col)
+                            (aref filter (- row row-off) (- col col-off)))))
                 (product (range (max 0 row-off)
                                 (min root-nrows (+ filter-nrows row-off)))
                          (range (max 0 col-off)
                                 (min root-ncols (+ filter-ncols col-off)))))))
-     (product (range (- 1 (nrows root)) (nrows root))
-              (range (- 1 (ncols root)) (ncols root))))))
+     (product (range (- 1 (nrows filter)) (nrows root))
+              (range (- 1 (ncols filter)) (ncols root))))))
 
 (defun make-index (slices)
   ;; Given a list of slices of length n, generate a hash map "index" where
@@ -105,10 +104,10 @@
         for slice-ls on slices
         for s0 = (car slice-ls)
         for i0 from 0
-        do (loop for slice1 in slices
-                 for i1 from 0
+        do (loop for s1 in slice-ls
+                 for i1 from i0
                  unless (memberp (list i0 i1) (map-keys valid-offsets))
-                   do (let ((offs (allowable-offsets s0 slice1)))
+                   do (let ((offs (allowable-offsets s0 s1)))
                         (setf [valid-offsets (list i0 i1)] offs)
                         (setf [valid-offsets (list i1 i0)]
                               (loop for (roff coff) in offs
@@ -140,7 +139,6 @@
                             do (setf [h i] [s (list 0 0)])
                             finally (return h)))
          (num-slices (length slices))
-         (set/empty (set/empty num-slices))
          (lookup (index-to-lookup (make-index slices) num-slices))
          (wave (array-from-thunk (list out-nrows out-ncols)
                                  :value-thunk (lambda () (set/full num-slices)))))
@@ -169,14 +167,12 @@
                      for lcol = (+ ucol col-off)
                      when (array-in-bounds-p wave lrow lcol)
                        do (setf (aref wave lrow lcol)
-                                (aref wave lrow lcol)
-                                (set/inter (or [[lookup chosen-slice-idx] (list row-off col-off)]
-                                               set/empty)))))
+                                (set/inter (aref wave lrow lcol)
+                                           [[lookup chosen-slice-idx] (list row-off col-off)]))))
       (loop for i below (array-total-size wave)
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
             with final-output = (make-array (list out-nrows out-ncols))
             do
-               (break)
                (setf [final-output loc] [slice-reprs (set/to-index [wave loc])])
             finally (return final-output)))))
 
