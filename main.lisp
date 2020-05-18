@@ -6,35 +6,6 @@
 (defun nrows (im) [(array-dimensions im) 0])
 (declaim (inline ncols) (inline nrows))
 
-;; (defun num-possibs (set)
-;;   (reduce #'cl:+ set :initial-value 0))
-
-;; (defun set/to-index (bitset)
-;;   (loop for i from 0 below (length bitset)
-;;         when (not (zerop [bitset i])) do (return i)
-;;           finally (return #(255 0 255))))
-
-;; (defun set/inter (set1 set2)
-;;   (bit-and set1 set2))
-
-;; (defun set/random-elt (set)
-;;   (loop for i from 0
-;;         with count = 0
-;;         with rand = (1+ (random (num-possibs set)))
-;;         do (progn (incf count [set i])
-;;                   (when (<= rand count) (return-from set/random-elt i)))))
-
-;; (defun set/singleton (i n-slices)
-;;   (let ((s (make-array n-slices :initial-element 0 :element-type 'bit)))
-;;     (setf [s i] 1)
-;;     s))
-
-;; (defun set/empty (n-slices)
-;;   (make-array n-slices :initial-element 0 :element-type 'bit))
-
-;; (defun full-set (n-slices)
-;;   (make-array n-slices :initial-element 1 :element-type 'bit))
-
 (defun set/size (set)
   (length set))
 
@@ -44,21 +15,29 @@
 (defun set/random-elt (set)
   (alx:random-elt set))
 
+(defun set/add (set el)
+  (cond ((null set) (list el))
+        ((< (car set) el) (cons (car set) (set/add (cdr set) el)))
+        ((= (car set) el) set)
+        (t (cons el set))))
+
 (defun set/inter (s1 s2)
   (cond ((null s1) nil)
         ((null s2) nil)
         ((= (car s1) (car s2) (cons (car s1) (set/inter (cdr s1) (cdr s2)))))
         ((< (car s1) (car s2) (set/inter (cdr s1) s2)))
-        (t (set/inter (s1 (cdr s2))))))
+        (t (set/inter s1 (cdr s2)))))
 
 (defun set/singleton (item n-slices)
-  (cons item nil))
+  (declare (ignore n-slices))
+  (list item))
 
 (defun set/empty (n-slices)
+  (declare (ignore n-slices))
   nil)
 
 (defun set/full (n-slices)
-  (range n-slices))
+  (range 0 n-slices))
 
 (defun range (start end)
   (labels ((rec (start end acc)
@@ -121,7 +100,7 @@
 
 (defun make-index (slices)
   ;; Given a list of slices of length n, generate a hash map "index" where
-  ;; index[i,j] = (allowable-offsets slices[i] slices[j])
+  ;; index(i,j} = (allowable-offsets slices(i) slices(j))
   (loop with valid-offsets = {}
         for slice-ls on slices
         for s0 = (car slice-ls)
@@ -138,9 +117,9 @@
 
 (defun index-to-lookup (index num-slices)
   ;; Given an index of the sort described by make-index, construct a hash table "lookup"
-  ;; where lookup[i][off] is the set of slice indexes {j0, ..., jf} such that "off" is in
+  ;; where lookup(i)(off) is the set of slice indexes {j0, ..., jf} such that "off" is in
   ;; (allowable-offsets i jf)
-  ;; lookup[i][off] might not exist in the table, in which the key set is empty
+  ;; lookup(i)(off) might not exist in the table, in which the key set is empty
   (loop with lookup = {}
         for (i j) in (map-keys index)
         for offsets = [index (list i j)]
@@ -148,8 +127,8 @@
            (loop for i-lookup = [lookup i]
                  for off in offsets
                  do
-                    (ensure-get off i-lookup (make-array num-slices :element-type 'bit))
-                    (setf [[i-lookup off] j] 1))
+                    (ensure-get off i-lookup (set/empty num-slices))
+                    (set/add [i-lookup off] j))
         finally (return lookup)))
 
 (defun wave-function-collapse (image filter-ncols filter-nrows out-nrows out-ncols)
@@ -190,16 +169,17 @@
                      for lcol = (+ ucol col-off)
                      when (array-in-bounds-p wave lrow lcol)
                        do (setf (aref wave lrow lcol)
+                                (aref wave lrow lcol)
                                 (set/inter (or [[lookup chosen-slice-idx] (list row-off col-off)]
-                                               set/empty)
-                                           (aref wave lrow lcol)))))
+                                               set/empty)))))
       (loop for i below (array-total-size wave)
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
             with final-output = (make-array (list out-nrows out-ncols))
-            do (setf [final-output loc] [slice-reprs (set/to-index [wave loc])])
+            do
+               (break)
+               (setf [final-output loc] [slice-reprs (set/to-index [wave loc])])
             finally (return final-output)))))
 
-(nrt:in-readtable volt:readtable)
 (let* ((pixel-size 10)
        (source-path #P"~/Downloads/flowers.png")
        (source-png (png:load-file source-path))
@@ -219,8 +199,9 @@
               (:idle ()
                      (loop for i below (array-total-size source-data)
                            for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
-                           for color = (generic-cl:elt (generic-cl:elt source-data (list row)) (list col))
-                           do (gl:color (aref color 0) (aref color 1) (aref color 2))
+                           for color = [source-data (list row col)]
+                           do
+                              (gl:color (aref color 0) (aref color 1) (aref color 2))
                               (sd:render-fill-rect rend
                                                    (sd:make-rect (* col pixel-size) (* row pixel-size)
                                                                  pixel-size pixel-size)))
@@ -234,4 +215,4 @@
     (draw-image source-data))
 
   (defun draw-wfc ()
-    (draw-image (wave-function-collapse source-data 1 1 out-height out-width))))
+    (draw-image (wave-function-collapse source-data 2 2 out-height out-width))))
