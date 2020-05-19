@@ -68,7 +68,7 @@
             (product (range 0 nrows) (range 0 ncols)))
     slice))
 
-(defun make-slices (image f-nrows f-ncols )
+(defun make-slices (image f-nrows f-ncols)
   ;; Just collect the set of (f-ncols, f-nrows slices present in image)
   ;; Returns a list of the f-nrows, f-ncols slices of the image with no duplicate
   (let ((slices {}))
@@ -128,36 +128,35 @@
                                                       j)))
         finally (return lookup)))
 
-(defun wave-function-collapse (image filter-ncols filter-nrows out-nrows out-ncols)
+(defun wave-function-collapse (image filter-ncols filter-nrows out-dims)
   (let* ((mb-filter-offs (product (range (- 1 filter-nrows) filter-nrows)
                                   (range (- 1 filter-ncols) filter-ncols)))
          (slices (make-slices image filter-nrows filter-ncols))
          (slice-reprs (loop with h = {}
                             for s in slices
                             for i from 0
-                            do (setf (elt h i)  (elt s (list 0 0)))
+                            do (setf (elt h i)  (elt s '(0 0)))
                             finally (return h)))
          (num-slices (length slices))
          (lookup (index-to-lookup (make-index slices) num-slices))
-         (wave (array-from-thunk (list out-nrows out-ncols)
+         (wave (array-from-thunk out-dims
                                  :value-thunk (lambda () (set/full num-slices)))))
-    (labels ((min-ent-locs ()
+    (labels ((min-locs ()
                (loop with min-locs = nil
                      with min-ent = (1+ num-slices)
                      for i below (array-total-size wave)
                      for cell-ent = (set/size (elt wave i))
-                     for (r c) = (alx:rmajor-to-indices (array-dimensions wave) i)
-                     for loc = (list r c)
+                     for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
                      if (not (set/selected (elt wave i)))
                        do (cond ((< cell-ent min-ent) (setf min-ent cell-ent
                                                             min-locs (list loc)))
                                 ((= cell-ent min-ent) (push loc min-locs)))
                      finally (return min-locs))))
 
-      (loop for min-locs = (min-ent-locs)
+      (loop with chosen-locs = nil
+            for min-locs = (min-locs)
             while min-locs
-            with chosen-locs = nil
-            for chosen-loc = (alexandria:random-elt min-locs)
+            for chosen-loc = (alx:random-elt min-locs)
             for chosen-idx = (set/random-elt (elt wave chosen-loc))
             do (push chosen-loc chosen-locs)
                (setf (elt wave chosen-loc) (set/singleton chosen-idx num-slices))
@@ -172,7 +171,7 @@
 
       (loop for i below (array-total-size wave)
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
-            with final-output = (make-array (list out-nrows out-ncols))
+            with final-output = (make-array out-dims)
             do
                (setf (elt final-output loc) (elt slice-reprs (set/to-index (elt wave loc))))
             finally (return final-output)))))
@@ -182,13 +181,12 @@
        (source-png (png:load-file source-path))
        (source-data (png:data source-png))
 
-       (out-width 64)
-       (out-height 128))
+       (out-dims '(128 64)))
 
   (defun draw-image (source-data)
     (sd:with-init (:everything)
-      (sd:with-window (win :w (* (elt (array-dimensions source-data) 1) pixel-size)
-                           :h (* (elt (array-dimensions source-data) 0) pixel-size)
+      (sd:with-window (win :w (* (ncols source-data) pixel-size)
+                           :h (* (nrows source-data) pixel-size)
                            :flags '(:shown :opengl))
         (sd:with-gl-context (ctx win)
           (sd:with-renderer (rend win)
@@ -212,4 +210,4 @@
     (draw-image source-data))
 
   (defun draw-wfc ()
-    (draw-image (wave-function-collapse source-data 2 2 out-height out-width))))
+    (draw-image (wave-function-collapse source-data 4 4 out-dims))))
