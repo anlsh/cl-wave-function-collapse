@@ -2,8 +2,8 @@
 (nrt:in-readtable volt:readtable)
 
 ;; Abstraction functions
-(defun ncols (im) [(array-dimensions im) 1])
-(defun nrows (im) [(array-dimensions im) 0])
+(defun ncols (im) (elt (array-dimensions im) 1))
+(defun nrows (im) (elt (array-dimensions im) 0))
 (declaim (inline ncols) (inline nrows))
 
 (defun set/size (set)
@@ -54,14 +54,14 @@
   (let ((wave (make-array dims :element-type el-type)))
     (when value-thunk
       (loop for i below (array-total-size wave)
-            do (setf [wave i] (funcall value-thunk))))
+            do (setf (elt wave i) (funcall value-thunk))))
     wave))
 
 (defun 2d-window (arr row col nrows ncols)
   (let ((slice (make-array (list nrows ncols))))
     (mapcar (lambda (offsets)
               (destructuring-bind (srow scol) offsets
-                (setf [slice (list srow scol)] [arr (list (+ row srow) (+ col scol))])))
+                (setf (elt slice (list srow scol)) (elt arr (list (+ row srow) (+ col scol))))))
             (product (range 0 nrows) (range 0 ncols)))
     slice))
 
@@ -70,7 +70,7 @@
   ;; Returns a list of the f-nrows, f-ncols slices of the image with no duplicate
   (let ((slices {}))
     (mapcar (lambda (offs)
-              (setf [slices (2d-window image (first offs) (second offs) f-nrows f-ncols)] t))
+              (setf (elt slices (2d-window image (first offs) (second offs) f-nrows f-ncols)) t))
             (product (range 0 (1+ (- (nrows image) f-nrows)))
                      (range 0 (1+ (- (ncols image) f-ncols)))))
     (map-keys slices)))
@@ -108,8 +108,8 @@
                  for i1 from i0
                  unless (memberp (list i0 i1) (map-keys valid-offsets))
                    do (let ((offs (allowable-offsets s0 s1)))
-                        (setf [valid-offsets (list i0 i1)] offs)
-                        (setf [valid-offsets (list i1 i0)]
+                        (setf (elt valid-offsets (list i0 i1)) offs)
+                        (setf (elt valid-offsets (list i1 i0))
                               (loop for (roff coff) in offs
                                     collect (list (* -1 roff) (* -1 coff))))))
         finally (return valid-offsets)))
@@ -121,13 +121,13 @@
   ;; lookup(i)(off) might not exist in the table, in which the key set is empty
   (loop with lookup = {}
         for (i j) in (map-keys index)
-        for offsets = [index (list i j)]
+        for offsets = (elt index (list i j))
         do (ensure-get i lookup {})
-           (loop for i-lookup = [lookup i]
+           (loop for i-lookup = (elt lookup i)
                  for off in offsets
                  do
                     (ensure-get off i-lookup (set/empty num-slices))
-                    (set/add [i-lookup off] j))
+                    (set/add (elt i-lookup off) j))
         finally (return lookup)))
 
 (defun wave-function-collapse (image filter-ncols filter-nrows out-nrows out-ncols)
@@ -136,7 +136,7 @@
          (slice-reprs (loop with h = {}
                             for s in slices
                             for i from 0
-                            do (setf [h i] [s (list 0 0)])
+                            do (setf (elt h i)  (elt s (list 0 0)))
                             finally (return h)))
          (num-slices (length slices))
          (empty-set (set/empty num-slices))
@@ -147,7 +147,7 @@
                (loop with min-locs = nil
                      with min-ent = (1+ num-slices)
                      for i below (array-total-size wave)
-                     for cell-ent = (1- (set/size [wave i]))
+                     for cell-ent = (1- (set/size (elt wave i)))
                      for (r c) = (alx:rmajor-to-indices (array-dimensions wave) i)
                      for loc = (list r c)
                      do (when (> cell-ent 0)
@@ -169,12 +169,13 @@
                      when (array-in-bounds-p wave lrow lcol)
                        do (setf (aref wave lrow lcol)
                                 (set/inter (aref wave lrow lcol)
-                                           [[lookup chosen-slice-idx] (list row-off col-off)]))))
+                                           (elt (elt lookup chosen-slice-idx)
+                                                (list row-off col-off))))))
       (loop for i below (array-total-size wave)
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
             with final-output = (make-array (list out-nrows out-ncols))
             do
-               (setf [final-output loc] [slice-reprs (set/to-index [wave loc])])
+               (setf (elt final-output loc) (elt slice-reprs (set/to-index (elt wave loc))))
             finally (return final-output)))))
 
 (let* ((pixel-size 10)
@@ -187,8 +188,8 @@
 
   (defun draw-image (source-data)
     (sd:with-init (:everything)
-      (sd:with-window (win :w (* [(array-dimensions source-data) 1] pixel-size)
-                           :h (* [(array-dimensions source-data) 0] pixel-size)
+      (sd:with-window (win :w (* (elt (array-dimensions source-data) 1) pixel-size)
+                           :h (* (elt (array-dimensions source-data) 0) pixel-size)
                            :flags '(:shown :opengl))
         (sd:with-gl-context (ctx win)
           (sd:with-renderer (rend win)
@@ -196,7 +197,7 @@
               (:idle ()
                      (loop for i below (array-total-size source-data)
                            for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
-                           for color = [source-data (list row col)]
+                           for color = (elt source-data (list row col))
                            do
                               (gl:color (aref color 0) (aref color 1) (aref color 2))
                               (sd:render-fill-rect rend
