@@ -87,9 +87,8 @@
     (remove-if-not (lambda (filter-offset)
                      (destructuring-bind (row-off col-off) filter-offset
                        (every (lambda (root-idxs)
-                                (destructuring-bind (row col) root-idxs
-                                  (equalp (aref root row col)
-                                          (aref filter (- row row-off) (- col col-off)))))
+                                (equalp (elt root root-idxs)
+                                        (elt filter (mapcar #'- root-idxs filter-offset))))
                               (product (range (max 0 row-off)
                                               (min (nrows root) (+ filter-nrows row-off)))
                                        (range (max 0 col-off)
