@@ -139,6 +139,7 @@
                             do (setf [h i] [s (list 0 0)])
                             finally (return h)))
          (num-slices (length slices))
+         (empty-set (set/empty num-slices))
          (lookup (index-to-lookup (make-index slices) num-slices))
          (wave (array-from-thunk (list out-nrows out-ncols)
                                  :value-thunk (lambda () (set/full num-slices)))))
