@@ -15,6 +15,9 @@
 (defun set/random-elt (set)
   (alx:random-elt set))
 
+(defun set/selected (set)
+  (= (length set) 1))
+
 (defun set/add (set el)
   (cond ((null set) (list el))
         ((< (car set) el) (cons (car set) (set/add (cdr set) el)))
@@ -24,8 +27,8 @@
 (defun set/inter (s1 s2)
   (cond ((null s1) nil)
         ((null s2) nil)
-        ((= (car s1) (car s2) (cons (car s1) (set/inter (cdr s1) (cdr s2)))))
-        ((< (car s1) (car s2) (set/inter (cdr s1) s2)))
+        ((= (car s1) (car s2)) (cons (car s1) (set/inter (cdr s1) (cdr s2))))
+        ((< (car s1) (car s2)) (set/inter (cdr s1) s2))
         (t (set/inter s1 (cdr s2)))))
 
 (defun set/singleton (item n-slices)
@@ -80,22 +83,19 @@
   ;; top-left corner of filter is placed at a row, col offset of (ri, ci), the overlapping
   ;; portions of root and filter coincide
   (let ((filter-nrows (nrows filter))
-        (filter-ncols (ncols filter))
-        (root-nrows (nrows root))
-        (root-ncols (ncols root)))
-    (remove-if-not
-     (lambda (filter-offset)
-       (destructuring-bind (row-off col-off) filter-offset
-         (every (lambda (root-idxs)
-                  (destructuring-bind (row col) root-idxs
-                    (equalp (aref root row col)
-                            (aref filter (- row row-off) (- col col-off)))))
-                (product (range (max 0 row-off)
-                                (min root-nrows (+ filter-nrows row-off)))
-                         (range (max 0 col-off)
-                                (min root-ncols (+ filter-ncols col-off)))))))
-     (product (range (- 1 (nrows filter)) (nrows root))
-              (range (- 1 (ncols filter)) (ncols root))))))
+        (filter-ncols (ncols filter)))
+    (remove-if-not (lambda (filter-offset)
+                     (destructuring-bind (row-off col-off) filter-offset
+                       (every (lambda (root-idxs)
+                                (destructuring-bind (row col) root-idxs
+                                  (equalp (aref root row col)
+                                          (aref filter (- row row-off) (- col col-off)))))
+                              (product (range (max 0 row-off)
+                                              (min (nrows root) (+ filter-nrows row-off)))
+                                       (range (max 0 col-off)
+                                              (min (ncols root) (+ filter-ncols col-off)))))))
+                   (product (range (- 1 filter-nrows) (nrows root))
+                            (range (- 1 filter-ncols) (ncols root))))))
 
 (defun make-index (slices)
   ;; Given a list of slices of length n, generate a hash map "index" where
@@ -106,12 +106,11 @@
         for i0 from 0
         do (loop for s1 in slice-ls
                  for i1 from i0
-                 unless (memberp (list i0 i1) (map-keys valid-offsets))
-                   do (let ((offs (allowable-offsets s0 s1)))
-                        (setf (elt valid-offsets (list i0 i1)) offs)
-                        (setf (elt valid-offsets (list i1 i0))
-                              (loop for (roff coff) in offs
-                                    collect (list (* -1 roff) (* -1 coff))))))
+                 do (let ((offs (allowable-offsets s0 s1)))
+                      (setf (elt valid-offsets (list i0 i1)) offs)
+                      (setf (elt valid-offsets (list i1 i0))
+                            (loop for (roff coff) in offs
+                                  collect (list (* -1 roff) (* -1 coff))))))
         finally (return valid-offsets)))
 
 (defun index-to-lookup (index num-slices)
@@ -122,16 +121,17 @@
   (loop with lookup = {}
         for (i j) in (map-keys index)
         for offsets = (elt index (list i j))
-        do (ensure-get i lookup {})
-           (loop for i-lookup = (elt lookup i)
+        do (loop for i-lookup = (ensure-get i lookup {})
                  for off in offsets
                  do
-                    (ensure-get off i-lookup (set/empty num-slices))
-                    (set/add (elt i-lookup off) j))
+                    (setf (elt i-lookup off) (set/add (ensure-get off i-lookup
+                                                        (set/empty num-slices))
+                                                      j)))
         finally (return lookup)))
 
 (defun wave-function-collapse (image filter-ncols filter-nrows out-nrows out-ncols)
-  (let* ((mb-filter-offs (product (range 0 (1- filter-nrows)) (range 0 (1- filter-ncols))))
+  (let* ((mb-filter-offs (product (range (- 1 filter-nrows) filter-nrows)
+                                  (range (- 1 filter-ncols) filter-ncols)))
          (slices (make-slices image filter-nrows filter-ncols))
          (slice-reprs (loop with h = {}
                             for s in slices
@@ -139,7 +139,6 @@
                             do (setf (elt h i)  (elt s (list 0 0)))
                             finally (return h)))
          (num-slices (length slices))
-         (empty-set (set/empty num-slices))
          (lookup (index-to-lookup (make-index slices) num-slices))
          (wave (array-from-thunk (list out-nrows out-ncols)
                                  :value-thunk (lambda () (set/full num-slices)))))
@@ -147,30 +146,31 @@
                (loop with min-locs = nil
                      with min-ent = (1+ num-slices)
                      for i below (array-total-size wave)
-                     for cell-ent = (1- (set/size (elt wave i)))
+                     for cell-ent = (set/size (elt wave i))
                      for (r c) = (alx:rmajor-to-indices (array-dimensions wave) i)
                      for loc = (list r c)
-                     do (when (> cell-ent 0)
-                          (cond ((< cell-ent min-ent) (setf min-ent cell-ent
+                     if (not (set/selected (elt wave i)))
+                       do (cond ((< cell-ent min-ent) (setf min-ent cell-ent
                                                             min-locs (list loc)))
-                                ((= cell-ent min-ent) (push loc min-locs))))
+                                ((= cell-ent min-ent) (push loc min-locs)))
                      finally (return min-locs))))
 
       (loop for min-locs = (min-ent-locs)
             while min-locs
-            for update-loc = (alexandria:random-elt min-locs)
-            for (urow ucol) = update-loc
-            for chosen-slice-idx = (set/random-elt (aref wave urow ucol))
-            for singleton = (set/singleton chosen-slice-idx num-slices)
-            do (setf (aref wave urow ucol) singleton)
-               (loop for (row-off col-off) in mb-filter-offs
-                     for lrow = (+ urow row-off)
-                     for lcol = (+ ucol col-off)
-                     when (array-in-bounds-p wave lrow lcol)
-                       do (setf (aref wave lrow lcol)
-                                (set/inter (aref wave lrow lcol)
-                                           (elt (elt lookup chosen-slice-idx)
-                                                (list row-off col-off))))))
+            with chosen-locs = nil
+            for chosen-loc = (alexandria:random-elt min-locs)
+            for chosen-idx = (set/random-elt (elt wave chosen-loc))
+            do (push chosen-loc chosen-locs)
+               (setf (elt wave chosen-loc) (set/singleton chosen-idx num-slices))
+               (loop for offs in mb-filter-offs
+                     for off-loc = (mapcar #'+ chosen-loc offs)
+                     when (apply #'array-in-bounds-p wave off-loc)
+                       do
+                          (setf (elt wave off-loc)
+                                (or (set/inter (elt wave off-loc)
+                                               (elt (elt lookup chosen-idx) offs))
+                                    (error "Unresolvable configuration")))))
+
       (loop for i below (array-total-size wave)
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
             with final-output = (make-array (list out-nrows out-ncols))
