@@ -175,25 +175,12 @@
                                           for possibs = (set/union possibs (elt (elt lookup idx) off))
                                           finally
                                              (setf (elt wave off-loc)
-                                                   (set/inter possibs orig-off-loc-possibs))
+                                                   (or (set/inter possibs orig-off-loc-possibs)
+                                                       (error "Unresolvalble configuration")))
                                              (unless (equalp (elt wave off-loc) orig-off-loc-possibs)
                                                (setf (elt new-changed off-loc) t))))
                           finally (setf changed new-changed))
-                     while (map-keys changed)))
-             ;; (propagate-recur (loc)
-             ;;   (loop for offs in mb-filter-offs
-             ;;         for off-loc = (mapcar #'+ loc offs)
-             ;;         when (apply #'array-in-bounds-p wave off-loc)
-             ;;           do
-             ;;              (loop
-             ;;                with orig-possibs = (elt wave off-loc)
-             ;;                for idx in (elt wave loc)
-             ;;                for possibs = (set/union possibs (elt (elt lookup idx) offs))
-             ;;                finally
-             ;;                   (setf (elt wave off-loc) (set/inter orig-possibs possibs))
-             ;;                   (unless (equalp orig-possibs (elt wave off-loc))
-             ;;                     (propagate off-loc)))))
-             )
+                     while (map-keys changed))))
 
       (loop for min-locs = (min-locs)
             while min-locs
@@ -211,7 +198,7 @@
                (return final-output)))))
 
 (let* ((pixel-size 10)
-       (source-path #P"~/Downloads/pixil-4.png")
+       (source-path #P"~/Downloads/flowers.png")
        (source-png (png:load-file source-path))
        (source-data (png:data source-png))
 
