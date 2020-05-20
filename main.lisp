@@ -162,11 +162,10 @@
                                 ((= cell-ent min-ent) (push loc min-locs)))
                      finally (return min-locs)))
              (propagate (loc)
-               (declare (ignore loc))
-               (loop for changed = nil
+               (loop with changed = {(loc t)}
+                     for new-changed = {}
                      do (loop
-                          for i below (array-total-size wave)
-                          for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
+                          for loc in (map-keys changed)
                           do (loop
                                for off in mb-filter-offs
                                for off-loc = (mapcar #'+ loc off)
@@ -177,9 +176,10 @@
                                           finally
                                              (setf (elt wave off-loc)
                                                    (set/inter possibs orig-off-loc-possibs))
-                                             (setf changed (or changed (not (equalp orig-off-loc-possibs
-                                                                                    possibs)))))))
-                     while changed))
+                                             (unless (equalp (elt wave off-loc) orig-off-loc-possibs)
+                                               (setf (elt new-changed off-loc) t))))
+                          finally (setf changed new-changed))
+                     while (map-keys changed)))
              ;; (propagate-recur (loc)
              ;;   (loop for offs in mb-filter-offs
              ;;         for off-loc = (mapcar #'+ loc offs)
