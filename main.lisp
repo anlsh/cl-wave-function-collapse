@@ -235,4 +235,4 @@
     (draw-image source-data))
 
   (defun draw-wfc ()
-    (draw-image (wave-function-collapse source-data 2 2 out-dims))))
+    (draw-image (wave-function-collapse source-data 4 4 out-dims))))
