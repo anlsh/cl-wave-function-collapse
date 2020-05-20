@@ -28,6 +28,13 @@
         ((< (car s1) (car s2)) (set/inter (cdr s1) s2))
         (t (set/inter s1 (cdr s2)))))
 
+(defun set/union (s1 s2)
+  (cond ((null s1) s2)
+        ((null s2) s1)
+        ((= (car s1) (car s2)) (cons (car s1) (set/union (cdr s1) (cdr s2))))
+        ((< (car s1) (car s2)) (cons (car s1) (set/union (cdr s1) s2)))
+        (t (cons (car s2) (set/union s1 (cdr s2))))))
+
 (defun set/singleton (item n-slices)
   (declare (ignore n-slices))
   (list item))
@@ -38,6 +45,9 @@
 
 (defun set/full (n-slices)
   (range 0 n-slices))
+
+(defun set/finalized (set)
+  (and set (null (cdr set))))
 
 (defun range (start end)
   (labels ((rec (start end acc)
@@ -139,34 +149,58 @@
          (wave (array-from-thunk out-dims
                                  :value-thunk (lambda () (set/full num-slices)))))
 
-    (labels ((min-locs (finalized-locs)
+    (labels ((min-locs ()
                (loop with min-locs = nil
                      with min-ent = nil
                      for i below (array-total-size wave)
                      for cell-ent = (set/size (elt wave i))
                      for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
-                     if (not (elt finalized-locs loc))
+                     when (not (set/finalized (elt wave i)))
                        do (cond ((or (null min-ent) (< cell-ent min-ent))
                                  (setf min-ent cell-ent
                                        min-locs (list loc)))
                                 ((= cell-ent min-ent) (push loc min-locs)))
-                     finally (return min-locs))))
+                     finally (return min-locs)))
+             (propagate (loc)
+               (declare (ignore loc))
+               (loop for changed = nil
+                     do (loop
+                          for i below (array-total-size wave)
+                          for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
+                          do (loop
+                               for off in mb-filter-offs
+                               for off-loc = (mapcar #'+ loc off)
+                               when (apply #'array-in-bounds-p wave off-loc)
+                                 do (loop with orig-off-loc-possibs = (elt wave off-loc)
+                                          for idx in (elt wave loc)
+                                          for possibs = (set/union possibs (elt (elt lookup idx) off))
+                                          finally
+                                             (setf (elt wave off-loc)
+                                                   (set/inter possibs orig-off-loc-possibs))
+                                             (setf changed (or changed (not (equalp orig-off-loc-possibs
+                                                                                    possibs)))))))
+                     while changed))
+             ;; (propagate-recur (loc)
+             ;;   (loop for offs in mb-filter-offs
+             ;;         for off-loc = (mapcar #'+ loc offs)
+             ;;         when (apply #'array-in-bounds-p wave off-loc)
+             ;;           do
+             ;;              (loop
+             ;;                with orig-possibs = (elt wave off-loc)
+             ;;                for idx in (elt wave loc)
+             ;;                for possibs = (set/union possibs (elt (elt lookup idx) offs))
+             ;;                finally
+             ;;                   (setf (elt wave off-loc) (set/inter orig-possibs possibs))
+             ;;                   (unless (equalp orig-possibs (elt wave off-loc))
+             ;;                     (propagate off-loc)))))
+             )
 
-      (loop with finalized-locs = {}
-            for min-locs = (min-locs finalized-locs)
+      (loop for min-locs = (min-locs)
             while min-locs
             for chosen-loc = (alx:random-elt min-locs)
             for chosen-idx = (set/random-elt (elt wave chosen-loc))
             do (setf (elt wave chosen-loc) (set/singleton chosen-idx num-slices))
-               (loop for offs in mb-filter-offs
-                     for off-loc = (mapcar #'+ chosen-loc offs)
-                     when (apply #'array-in-bounds-p wave off-loc)
-                       do
-                          (setf (elt wave off-loc)
-                                (or (set/inter (elt wave off-loc)
-                                               (elt (elt lookup chosen-idx) offs))
-                                    (error "Unresolvable configuration"))))
-               (setf (elt finalized-locs chosen-loc) t))
+               (propagate chosen-loc))
 
       (loop for i below (array-total-size wave)
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
