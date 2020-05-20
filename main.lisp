@@ -141,25 +141,26 @@
          (lookup (index-to-lookup (make-index slices) num-slices))
          (wave (array-from-thunk out-dims
                                  :value-thunk (lambda () (set/full num-slices)))))
+
     (labels ((min-locs ()
                (loop with min-locs = nil
-                     with min-ent = (1+ num-slices)
+                     with min-ent = nil
                      for i below (array-total-size wave)
                      for cell-ent = (set/size (elt wave i))
                      for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
                      if (not (set/selected (elt wave i)))
-                       do (cond ((< cell-ent min-ent) (setf min-ent cell-ent
-                                                            min-locs (list loc)))
+                       do (cond ((or (null min-ent) (< cell-ent min-ent))
+                                 (setf min-ent cell-ent
+                                       min-locs (list loc)))
                                 ((= cell-ent min-ent) (push loc min-locs)))
                      finally (return min-locs))))
 
-      (loop with chosen-locs = nil
+      (loop with finalized-locs = nil
             for min-locs = (min-locs)
             while min-locs
             for chosen-loc = (alx:random-elt min-locs)
             for chosen-idx = (set/random-elt (elt wave chosen-loc))
-            do (push chosen-loc chosen-locs)
-               (setf (elt wave chosen-loc) (set/singleton chosen-idx num-slices))
+            do (setf (elt wave chosen-loc) (set/singleton chosen-idx num-slices))
                (loop for offs in mb-filter-offs
                      for off-loc = (mapcar #'+ chosen-loc offs)
                      when (apply #'array-in-bounds-p wave off-loc)
@@ -167,14 +168,20 @@
                           (setf (elt wave off-loc)
                                 (or (set/inter (elt wave off-loc)
                                                (elt (elt lookup chosen-idx) offs))
-                                    (error "Unresolvable configuration")))))
+                                    (error "Unresolvable configuration"))))
+               (push chosen-loc finalized-locs))
 
       (loop for i below (array-total-size wave)
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
             with final-output = (make-array out-dims)
             do
                (setf (elt final-output loc) (elt slice-reprs (set/to-index (elt wave loc))))
-            finally (return final-output)))))
+               (format t "Slice ~a with repr ~a chosen for location ~a~%"
+                       (set/to-index (elt wave loc))
+                       (elt slice-reprs (set/to-index (elt wave loc)))
+                       loc)
+            finally
+               (return final-output)))))
 
 (let* ((pixel-size 10)
        (source-path #P"~/Downloads/flowers.png")
@@ -191,23 +198,27 @@
         (sd:with-gl-context (ctx win)
           (sd:with-renderer (rend win)
             (sdl2:with-event-loop (:method :poll)
+              (:quit () t)
               (:idle ()
                      (loop for i below (array-total-size source-data)
                            for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
                            for color = (elt source-data (list row col))
                            do
-                              (gl:color (aref color 0) (aref color 1) (aref color 2))
+                              (sdl2:set-render-draw-color rend
+                                                          (aref color 0)
+                                                          (aref color 1)
+                                                          (aref color 2) 255)
                               (sd:render-fill-rect rend
-                                                   (sd:make-rect (* col pixel-size) (* row pixel-size)
+                                                   (sd:make-rect (* col pixel-size)
+                                                                 (* row pixel-size)
                                                                  pixel-size pixel-size)))
 
-                     (gl:flush)
-                     (sdl2:gl-swap-window win))
-
-              (:quit () t)))))))
+                     ;; (gl:flush)
+                     ;; (sdl2:gl-swap-window win)
+                     (sdl2:render-present rend))))))))
 
   (defun draw-src ()
     (draw-image source-data))
 
   (defun draw-wfc ()
-    (draw-image (wave-function-collapse source-data 4 4 out-dims))))
+    (draw-image (wave-function-collapse source-data 1 1 out-dims))))

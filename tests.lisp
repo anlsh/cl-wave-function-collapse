@@ -23,6 +23,6 @@
   (let* ((percent-tol 1)
          (num-trials 2000)
          (source-img (make-array '(1 2) :initial-contents '((1 0))))
-         (wfc (wave-function-collapse source-img 1 1 1 num-trials)))
+         (wfc (wave-function-collapse source-img 1 1 (list 1 num-trials))))
     (clunit:assert-true (< (abs (- (* 1/2 num-trials) (generic-cl:count 0 wfc)))
                            (* percent-tol 2/100 num-trials)))))
