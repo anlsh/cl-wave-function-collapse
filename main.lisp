@@ -15,9 +15,6 @@
 (defun set/random-elt (set)
   (alx:random-elt set))
 
-(defun set/selected (set)
-  (= (length set) 1))
-
 (defun set/add (set el)
   (cond ((null set) (list el))
         ((< (car set) el) (cons (car set) (set/add (cdr set) el)))
@@ -74,8 +71,8 @@
   (let ((slices {}))
     (mapcar (lambda (offs)
               (setf (elt slices (2d-window image (first offs) (second offs) f-nrows f-ncols)) t))
-            (product (range 0 (1+ (- (nrows image) f-nrows)))
-                     (range 0 (1+ (- (ncols image) f-ncols)))))
+            (product (range 0 (- (nrows image) f-nrows))
+                     (range 0 (- (ncols image) f-ncols))))
     (map-keys slices)))
 
 (defun allowable-offsets (root filter)
@@ -142,21 +139,21 @@
          (wave (array-from-thunk out-dims
                                  :value-thunk (lambda () (set/full num-slices)))))
 
-    (labels ((min-locs ()
+    (labels ((min-locs (finalized-locs)
                (loop with min-locs = nil
                      with min-ent = nil
                      for i below (array-total-size wave)
                      for cell-ent = (set/size (elt wave i))
                      for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
-                     if (not (set/selected (elt wave i)))
+                     if (not (elt finalized-locs loc))
                        do (cond ((or (null min-ent) (< cell-ent min-ent))
                                  (setf min-ent cell-ent
                                        min-locs (list loc)))
                                 ((= cell-ent min-ent) (push loc min-locs)))
                      finally (return min-locs))))
 
-      (loop with finalized-locs = nil
-            for min-locs = (min-locs)
+      (loop with finalized-locs = {}
+            for min-locs = (min-locs finalized-locs)
             while min-locs
             for chosen-loc = (alx:random-elt min-locs)
             for chosen-idx = (set/random-elt (elt wave chosen-loc))
@@ -169,22 +166,18 @@
                                 (or (set/inter (elt wave off-loc)
                                                (elt (elt lookup chosen-idx) offs))
                                     (error "Unresolvable configuration"))))
-               (push chosen-loc finalized-locs))
+               (setf (elt finalized-locs chosen-loc) t))
 
       (loop for i below (array-total-size wave)
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
             with final-output = (make-array out-dims)
             do
                (setf (elt final-output loc) (elt slice-reprs (set/to-index (elt wave loc))))
-               (format t "Slice ~a with repr ~a chosen for location ~a~%"
-                       (set/to-index (elt wave loc))
-                       (elt slice-reprs (set/to-index (elt wave loc)))
-                       loc)
             finally
                (return final-output)))))
 
 (let* ((pixel-size 10)
-       (source-path #P"~/Downloads/flowers.png")
+       (source-path #P"~/Downloads/pixil-4.png")
        (source-png (png:load-file source-path))
        (source-data (png:data source-png))
 
@@ -221,4 +214,4 @@
     (draw-image source-data))
 
   (defun draw-wfc ()
-    (draw-image (wave-function-collapse source-data 1 1 out-dims))))
+    (draw-image (wave-function-collapse source-data 2 2 out-dims))))
