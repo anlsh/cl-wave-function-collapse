@@ -7,7 +7,9 @@
   :version "0.0.1"
   :serial t
   :depends-on (:volt :alexandria :clunit :generic-cl :named-readtables
+                     :picl
                      :cl-opengl :sdl2 :pngload-fast)
   :components ((:file "package")
-               (:file "main" :depends-on ("package"))
-               (:file "tests" :depends-on ("main"))))
+               (:file "list-set" :depends-on ("package"))
+               (:file "wfc" :depends-on ("package" "list-set"))
+               (:file "tests" :depends-on ("wfc"))))

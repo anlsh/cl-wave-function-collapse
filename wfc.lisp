@@ -2,63 +2,9 @@
 (nrt:in-readtable volt:readtable)
 
 ;; Abstraction functions
-(defun ncols (im) (elt (array-dimensions im) 1))
-(defun nrows (im) (elt (array-dimensions im) 0))
+(defun ncols (im) (gcl:elt (array-dimensions im) 1))
+(defun nrows (im) (gcl:elt (array-dimensions im) 0))
 (declaim (inline ncols) (inline nrows))
-
-(defun set/size (set)
-  (length set))
-
-(defun set/to-index (set)
-  (car set))
-
-(defun set/random-elt (set)
-  (alx:random-elt set))
-
-(defun set/add (set el)
-  (cond ((null set) (list el))
-        ((< (car set) el) (cons (car set) (set/add (cdr set) el)))
-        ((= (car set) el) set)
-        (t (cons el set))))
-
-(defun set/inter (s1 s2)
-  (cond ((null s1) nil)
-        ((null s2) nil)
-        ((= (car s1) (car s2)) (cons (car s1) (set/inter (cdr s1) (cdr s2))))
-        ((< (car s1) (car s2)) (set/inter (cdr s1) s2))
-        (t (set/inter s1 (cdr s2)))))
-
-(defun set/union (s1 s2)
-  (cond ((null s1) s2)
-        ((null s2) s1)
-        ((= (car s1) (car s2)) (cons (car s1) (set/union (cdr s1) (cdr s2))))
-        ((< (car s1) (car s2)) (cons (car s1) (set/union (cdr s1) s2)))
-        (t (cons (car s2) (set/union s1 (cdr s2))))))
-
-(defun set/singleton (item n-slices)
-  (declare (ignore n-slices))
-  (list item))
-
-(defun set/empty (n-slices)
-  (declare (ignore n-slices))
-  nil)
-
-(defun set/full (n-slices)
-  (range 0 n-slices))
-
-(defun set/finalized (set)
-  (and set (null (cdr set))))
-
-(defun range (start end)
-  (labels ((rec (start end acc)
-             (if (<= end start)
-                 acc
-                 (rec start (1- end) (cons (1- end) acc)))))
-    (rec start end nil)))
-
-(defun product (seq1 seq2)
-  (reduce #'append (mapcar (lambda (e2) (mapcar (lambda (e1) (list e1 e2)) seq1))
-                           seq2)))
 
 (defun array-from-thunk (dims &key (value-thunk nil) (el-type t))
   (let ((wave (make-array dims :element-type el-type)))
@@ -69,39 +15,40 @@
 
 (defun 2d-window (arr row col nrows ncols)
   (let ((slice (make-array (list nrows ncols))))
-    (mapcar (lambda (offsets)
-              (destructuring-bind (srow scol) offsets
-                (setf (elt slice (list srow scol)) (elt arr (list (+ row srow) (+ col scol))))))
-            (product (range 0 nrows) (range 0 ncols)))
+    (picl:map (lambda (offsets)
+                (destructuring-bind (srow scol) offsets
+                  (setf (elt slice (list srow scol)) (elt arr (list (+ row srow) (+ col scol))))))
+              (product (range nrows) (range ncols)))
     slice))
 
 (defun make-slices (image f-nrows f-ncols)
   ;; Just collect the set of (f-ncols, f-nrows slices present in image)
   ;; Returns a list of the f-nrows, f-ncols slices of the image with no duplicate
   (let ((slices {}))
-    (mapcar (lambda (offs)
-              (setf (elt slices (2d-window image (first offs) (second offs) f-nrows f-ncols)) t))
-            (product (range 0 (- (nrows image) f-nrows))
-                     (range 0 (- (ncols image) f-ncols))))
+    (picl:map (lambda (offs)
+                (setf (gcl:elt slices (2d-window image (gcl:elt offs 0) (gcl:elt offs 1)
+                                                 f-nrows f-ncols)) t))
+              (product (range (- (nrows image) f-nrows))
+                       (range (- (ncols image) f-ncols))))
     (map-keys slices)))
 
-(defun allowable-offsets (root filter)
+(defun allowable-offsets (root mask)
   ;; Returns a list of allowable offsets ((r0, c0), (r1, c1), ...) such that when the
   ;; top-left corner of filter is placed at a row, col offset of (ri, ci), the overlapping
   ;; portions of root and filter coincide
   (let ((filter-nrows (nrows filter))
         (filter-ncols (ncols filter)))
-    (remove-if-not (lambda (filter-offset)
-                     (destructuring-bind (row-off col-off) filter-offset
-                       (every (lambda (root-idxs)
-                                (equalp (elt root root-idxs)
-                                        (elt filter (mapcar #'- root-idxs filter-offset))))
-                              (product (range (max 0 row-off)
-                                              (min (nrows root) (+ filter-nrows row-off)))
-                                       (range (max 0 col-off)
-                                              (min (ncols root) (+ filter-ncols col-off)))))))
-                   (product (range (- 1 filter-nrows) (nrows root))
-                            (range (- 1 filter-ncols) (ncols root))))))
+    (picl:filter (lambda (mask-offset)
+                   (destructuring-bind (row-off col-off) mask-offset
+                     (always (picl:map (lambda (root-idxs)
+                                         (equalp (gcl:elt root root-idxs)
+                                                 (gcl:elt mask (picl:map #'- root-idxs mask-offset))))
+                                       (product (range (max 0 row-off)
+                                                       (min (nrows root) (+ mask-nrows row-off)))
+                                                (range (max 0 col-off)
+                                                       (min (ncols root) (+ mask-ncols col-off))))))))
+                 (product (range (1- mask-nrows) (nrows root))
+                          (range (1- mask-ncols) (ncols root))))))
 
 (defun make-index (slices)
   ;; Given a list of slices of length n, generate a hash map "index" where
@@ -193,7 +140,7 @@
             for loc = (alx:rmajor-to-indices (array-dimensions wave) i)
             with final-output = (make-array out-dims)
             do
-               (setf (elt final-output loc) (elt slice-reprs (set/to-index (elt wave loc))))
+               (setf (elt final-output loc) (elt slice-reprs (set/singleton-el (elt wave loc))))
             finally
                (return final-output)))))
 
