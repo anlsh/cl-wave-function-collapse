@@ -53,18 +53,20 @@
 (defun make-index (slices)
   ;; Given a list of slices of length n, generate a hash map "index" where
   ;; index(i,j} = (allowable-offsets slices(i) slices(j))
-  (loop with valid-offsets = {}
-        for slice-ls on slices
-        for s0 = (car slice-ls)
-        for i0 from 0
-        do (loop for s1 in slice-ls
-                 for i1 from i0
-                 do (let ((offs (allowable-offsets s0 s1)))
-                      (setf (elt valid-offsets (list i0 i1)) offs)
-                      (setf (elt valid-offsets (list i1 i0))
-                            (loop for (roff coff) in offs
-                                  collect (list (* -1 roff) (* -1 coff))))))
-        finally (return valid-offsets)))
+  (let ((valid-offsets {}))
+    (picl:starmap (lambda (slice-spec0 slice-spec1)
+                    (let ((i0 (car slice-spec-0))
+                          (i1 (car slice-spec-1))
+                          (s0 (cadr slice-spec-0))
+                          (s1 (cadr slice-spec-1))))
+                    (unless (gcl:elt (list i0 i1) valid-offsets)
+                      (let ((offs (allowable-offsets s0 s1)))
+                        (setf (elt valid-offsets (list i0 i1)) offs)
+                        (setf (elt valid-offsets (list i1 i0))
+                              (loop for (roff coff) in offs
+                                    collect (list (* -1 roff) (* -1 coff)))))))
+                  (picl:nfold-product 2 (picl:enumerate slices)))
+    valid-offsets))
 
 (defun index-to-lookup (index num-slices)
   ;; Given an index of the sort described by make-index, construct a hash table "lookup"
