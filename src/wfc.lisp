@@ -1,5 +1,7 @@
-(in-package :wfc)
-(nrt:in-readtable volt:readtable)
+(uiop:define-package :wfc/src/wfc
+  (:use :cl :arrow-macros))
+
+(in-package :wfc/src/wfc)
 
 ;; Abstraction functions
 (defun ncols (im) (gcl:elt (array-dimensions im) 1))
@@ -146,42 +148,42 @@
             finally
                (return final-output)))))
 
-(let* ((pixel-size 10)
-       (source-path #P"~/Downloads/flowers.png")
-       (source-png (png:load-file source-path))
-       (source-data (png:data source-png))
+(defun loc-subtract (a b)
+  (map 'vector #'- a b))
 
-       (out-dims '(128 64)))
+(defun wfc (state-map slice-idx-fn loc-is-edge?)
+  "Arguments are
+1. A map from locations in the source space to values
+2. The slice-idx-fn should map each location in state-map to the set of locations forming a
+   slice 'rooted' at said location.
+   Note: (slice-idx-fn loc) union (the set of locations with loc contained in their slice-idx-fn)
+         forms the 'neighborhood' of loc, ie this function is 'asymmetric' in a sense
+3, Argument 3 determines whether any given loc is near an edge (ie some of its slice-idx-fn is out
+   of bounds), which determines whether the given loc is used to generate slices"
 
-  (defun draw-image (source-data)
-    (sd:with-init (:everything)
-      (sd:with-window (win :w (* (ncols source-data) pixel-size)
-                           :h (* (nrows source-data) pixel-size)
-                           :flags '(:shown :opengl))
-        (sd:with-gl-context (ctx win)
-          (sd:with-renderer (rend win)
-            (sdl2:with-event-loop (:method :poll)
-              (:quit () t)
-              (:idle ()
-                     (loop for i below (array-total-size source-data)
-                           for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
-                           for color = (elt source-data (list row col))
-                           do
-                              (sdl2:set-render-draw-color rend
-                                                          (aref color 0)
-                                                          (aref color 1)
-                                                          (aref color 2) 255)
-                              (sd:render-fill-rect rend
-                                                   (sd:make-rect (* col pixel-size)
-                                                                 (* row pixel-size)
-                                                                 pixel-size pixel-size)))
-
-                     ;; (gl:flush)
-                     ;; (sdl2:gl-swap-window win)
-                     (sdl2:render-present rend))))))))
-
-  (defun draw-src ()
-    (draw-image source-data))
-
-  (defun draw-wfc ()
-    (draw-image (wave-function-collapse source-data 4 4 out-dims))))
+  (let* ((loc-nbor-map
+           (let ((res (fset:empty-map (fset:empty-set))))
+             ;; We use fset:image only for the side effects here, so return nil from the respective
+             ;; lambdas to avoid any potentially expensive construction of result sets
+             (fset:image (lambda (loc)
+                           (let ((loc-nbors (funcall slice-idx-fn loc)))
+                             (fset:unionf (fset:@ res loc) loc-nbors)
+                             (fset:image (lambda (nbor)
+                                           (fset:unionf (fset:@ res nbor)
+                                                        (fset:set loc))
+                                           nil)
+                                         loc-nbors))
+                           nil)
+                         (fset:domain state-map))
+             res))
+         (slices (-<> state-map
+                   (fset:domain <>)
+                   (fset:filter (lambda (x) (not (funcall loc-is-edge? x)))
+                                <>)
+                   (fset:image (lambda (loc)
+                                 (fset:reduce (lambda (nbor-map nbor-loc)
+                                                (fset:with nbor-map
+                                                           (loc-subtract nbor-loc loc)
+                                                           (fset:@ state-map nbor-loc)))
+                                              (funcall slice-idx-fn loc)))
+                               <>))))))
