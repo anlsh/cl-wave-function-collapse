@@ -1,6 +1,5 @@
-(uiop:define-package :wfc/src/image
-  (:use :cl)
-  (:use-reexport :wfc/src/wfc))
+(uiop:define-package :wfc/src/images
+  (:use :cl))
 
 (let* ((pixel-size 10)
        (source-path #P"~/Downloads/flowers.png")
