@@ -151,7 +151,23 @@
 (defun loc-subtract (a b)
   (map 'vector #'- a b))
 
-(defun wfc (state-map slice-idx-fn loc-is-edge?)
+(defun construct-nbor-map (state-map slice-idx-fn)
+  (let ((res (fset:empty-map (fset:empty-set))))
+    ;; We use fset:image only for the side effects here, so return nil from the respective
+    ;; lambdas to avoid any potentially expensive construction of result sets
+    (fset:image (lambda (loc)
+                  (let ((loc-nbors (funcall slice-idx-fn loc)))
+                    (fset:unionf (fset:@ res loc) loc-nbors)
+                    (fset:image (lambda
+                                  (fset:unionf (fset:@ res nbor)
+                                               (fset:set loc))
+                                  nil)
+                                loc-nbors))
+                  nil)
+                (fset:domain state-map))
+    res))
+
+(defun construct-slices (state-map slice-idx-fn loc-is-edge?)
   "Arguments are
 1. A map from locations in the source space to values
 2. The slice-idx-fn should map each location in state-map to the set of locations forming a
@@ -160,30 +176,68 @@
          forms the 'neighborhood' of loc, ie this function is 'asymmetric' in a sense
 3, Argument 3 determines whether any given loc is near an edge (ie some of its slice-idx-fn is out
    of bounds), which determines whether the given loc is used to generate slices"
+  (-<> state-map
+    (fset:domain <>)
+    (fset:filter (lambda (x) (not (funcall loc-is-edge? x)))
+                 <>)
+    (fset:image (lambda (loc)
+                  (fset:reduce (lambda (slice-map slice-loc)
+                                 (fset:with slice-map
+                                            (loc-subtract slice-loc loc)
+                                            (fset:@ state-map slice-loc)))
+                               (funcall slice-idx-fn loc)))
+                <>)
+    (fset:convert 'fset:seq <>)))
 
-  (let* ((loc-nbor-map
-           (let ((res (fset:empty-map (fset:empty-set))))
-             ;; We use fset:image only for the side effects here, so return nil from the respective
-             ;; lambdas to avoid any potentially expensive construction of result sets
-             (fset:image (lambda (loc)
-                           (let ((loc-nbors (funcall slice-idx-fn loc)))
-                             (fset:unionf (fset:@ res loc) loc-nbors)
-                             (fset:image (lambda (nbor)
-                                           (fset:unionf (fset:@ res nbor)
-                                                        (fset:set loc))
-                                           nil)
-                                         loc-nbors))
-                           nil)
-                         (fset:domain state-map))
-             res))
-         (slices (-<> state-map
-                   (fset:domain <>)
-                   (fset:filter (lambda (x) (not (funcall loc-is-edge? x)))
-                                <>)
-                   (fset:image (lambda (loc)
-                                 (fset:reduce (lambda (nbor-map nbor-loc)
-                                                (fset:with nbor-map
-                                                           (loc-subtract nbor-loc loc)
-                                                           (fset:@ state-map nbor-loc)))
-                                              (funcall slice-idx-fn loc)))
-                               <>))))))
+(defun updated-possibs (valid-offset-for-slices? offset rootslices nborslices)
+  ;; TODO This should really only neead the offsets
+  (fset:reduce #'fset:union
+               (fset:image (lambda (rootslice)
+                             (fset:filter (lambda (nborslice)
+                                            (funcall valid-offset-for-slices?
+                                                     rootpos rootslice nborpos nborslice))
+                                          nborslices))
+                           rootslices)))
+
+(defun random-from-set (set)
+  (error "Function not implemented"))
+
+(defun step-wfc (loc-possibs nbor-fn valid-offset-for-slices?)
+  "Takes a single step of the WFC algorithm, and returns the state which was just pinned and the
+updated loc-possibs.
+
+loc-possibs is a map from UNpinned locs to the respective set of remaining possible slices.
+It must be 'consistent' in that any single choice of slice for any single state should not
+conflict with any pinned states.
+
+Of course, this does not imply that loc-possibs admits a consistent assignment. When this is the
+case, this function will signal an error
+"
+  (let* ((min-entropy-locs (-<> (fset:range loc-possibs)
+                             (fset:image #'fset:size <>)
+                             (fset:reduce #'min <>)
+                             (fset:filter (lambda (loc) (= (fset:size (fset:@ loc-possibs loc))
+                                                           <>))
+                                          (fset:domain loc-possibs))))
+         (pin-loc (random-from-set min-entropy-locs))
+         (pin-loc-slice (random-from-set (fset:@ loc-possibs pin-loc))))
+    (setf (fset:@ loc-possibs pin-loc) (fset:set pin-loc-slice))
+    (labels
+        ((propagate (pos)
+           (fset:image (lambda (nbor)
+                         (let* ((old-possibs (fset:@ loc-possibs nbor))
+                                (new-possibs (updated-possibs valid-offset-for-slices?
+                                                              (loc-subtract nbor pos)
+                                                              (fset:@ loc-possibs pos)
+                                                              (fset:@ loc-possibs nbor))))
+                           (when (zerop (fset:size new-possibs))
+                             (error "Inconsistent assignment"))
+                           (setf (fset:@ loc-possibs nbor) new-possibs)
+                           (unless (fset:equal? old-possibs new-possibs)
+                             (propagate nbor))))
+                       (fset:less (fset:intersection (fset:domain loc-possibs)
+                                                     (funcall nbor-fn pos))
+                                  pos))))
+      (propagate pin-loc)
+      (values pin-loc pin-loc-slice
+              (fset:less loc-possibs pin-loc)))))
