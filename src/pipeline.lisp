@@ -1,7 +1,13 @@
 
 (uiop:define-package :wfc/src/pipeline
   (:use :cl :arrow-macros
-        :wfc/src/utils))
+        :wfc/src/utils)
+  (:export
+   #:construct-nbor-map
+   #:construct-nbor-fn
+   #:construct-slices
+   #:offslice-decider-raw
+   #:offslice-decider-coords))
 
 (in-package :wfc/src/pipeline)
 
@@ -15,6 +21,10 @@
           (fset:unionf (fset:@ res nbor)
                        (fset:set loc)))))
     res))
+
+(defun construct-nbor-fn (domain slice-idx-fn)
+  (let ((nbor-map (construct-nbor-map domain slice-idx-fn)))
+    (lambda (loc) (fset:@ nbor-map loc))))
 
 (defun construct-slices (state-map slice-idx-fn slice-loc?)
   "Arguments are
@@ -36,7 +46,7 @@
                                (funcall slice-idx-fn loc)))
                 <>)))
 
-(defun offslice-decider-raw (slice-idx-fn origin loc-eql?)
+(defun offslice-decider-raw (slice-idx-fn origin val-eql?)
   "Returns a memoizing function which takes an offset and two slices and returns whether such
 a placement is valid"
   (let ((cache (fset:empty-map)))
@@ -51,13 +61,12 @@ a placement is valid"
                     ;; TODO I'd really like to be able to short-circuit the reduce function...
                     ;; Right now I it'll keep chugging even after the first mismatch is detected
                     (fset:reduce (lambda (res pos)
-                                   (and res (funcall loc-eql?
+                                   (and res (funcall val-eql?
                                                      (fset:@ s0 pos)
                                                      (fset:@ s1 (loc-subtract pos off)))))
                                  <> :initial-value t))))))))
 
-(defun offslice-decider-coords (slices slice-idx-fn origin loc-eql?)
-  (let ((slices (fset:convert 'fset:seq slices))
-        (raw-decider (offslice-decider-raw slice-idx-fn origin loc-eql?)))
+(defun offslice-decider-coords (slices-seq slice-idx-fn origin val-eql?)
+  (let ((raw-decider (offslice-decider-raw slice-idx-fn origin val-eql?)))
     (lambda (off s0coord s1coord)
-      (funcall raw-decider off (fset:@ slices s0coord) (fset:@ slices s1coord)))))
+      (funcall raw-decider off (fset:@ slices-seq s0coord) (fset:@ slices-seq s1coord)))))

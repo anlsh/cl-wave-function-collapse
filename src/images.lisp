@@ -1,42 +1,48 @@
+
 (uiop:define-package :wfc/src/images
-  (:use :cl))
+  (:use :cl :arrow-macros
+        :wfc/src/utils
+        :wfc/src/core
+        :wfc/src/pipeline)
+  (:local-nicknames (:img :opticl)))
 
-(let* ((pixel-size 10)
-       (source-path #P"~/Downloads/flowers.png")
-       (source-png (png:load-file source-path))
-       (source-data (png:data source-png))
+(in-package :wfc/src/images)
 
-       (out-dims '(128 64)))
+(defparameter *pixel-size* 10)
 
-  (defun draw-image (source-data)
-    (sd:with-init (:everything)
-      (sd:with-window (win :w (* (ncols source-data) pixel-size)
-                           :h (* (nrows source-data) pixel-size)
-                           :flags '(:shown :opengl))
-        (sd:with-gl-context (ctx win)
-          (sd:with-renderer (rend win)
-            (sdl2:with-event-loop (:method :poll)
-              (:quit () t)
-              (:idle ()
-                     (loop for i below (array-total-size source-data)
-                           for (row col) = (alx:rmajor-to-indices (array-dimensions source-data) i)
-                           for color = (elt source-data (list row col))
-                           do
-                              (sdl2:set-render-draw-color rend
-                                                          (aref color 0)
-                                                          (aref color 1)
-                                                          (aref color 2) 255)
-                              (sd:render-fill-rect rend
-                                                   (sd:make-rect (* col pixel-size)
-                                                                 (* row pixel-size)
-                                                                 pixel-size pixel-size)))
+(defun slice-idx-fn-from-dims (src-dims slice-dims)
+  (let ((offsets (-<> slice-dims
+                   (picl:map #'picl:range <>)
+                   (picl:apply #'picl:product <>)
+                   (picl:iter-to-list <>)
+                   (fset:convert 'fset:set))))
+    (lambda (loc)
+      (-<> offsets
+        (fset:image (lambda (off) (map 'vector #'+ loc off)) <>)
+        (fset:filter (lambda (pos) (every #'< pos src-dims)) <>)))))
 
-                     ;; (gl:flush)
-                     ;; (sdl2:gl-swap-window win)
-                     (sdl2:render-present rend))))))))
+(defun wfc-from-image (source-png-path output-file-path slice-dims out-dims)
+  "Samples from source-png and writes to an output image
 
-  (defun draw-src ()
-    (draw-image source-data))
-
-  (defun draw-wfc ()
-    (draw-image (wave-function-collapse source-data 4 4 out-dims))))
+1, `source-png`: Path to the image to sample from
+2. `output-file-path`: Path to the output files
+3. `slice-dims` a vector representing the slice dimensions
+4. `out-dims`: a vector giving the dimensions of the ouput image"
+  (let* ((source-png (opticl:read-png-file source-png-path))
+         (src-dims (array-dimensions source-png))
+         (slice-idx-fn (slice-idx-fn-from-dims src-dims slice-dims))
+         (domain (-<> (subseq src-dims 0 2)
+                   (picl:map #'picl:range <>)
+                   (picl:apply #'picl:product <>)))
+         (nbor-fn (construct-nbor-fn domain slice-idx-fn))
+         (state-map (lift-set (lambda (pos) (vector (aref source-png (aref pos 0) (aref pos 1) 0)
+                                                    (aref source-png (aref pos 0) (aref pos 1) 1)
+                                                    (aref source-png (aref pos 0) (aref pos 1) 2)))
+                              domain)))
+    (labels ((slice-loc? (pos) (every #'<= (map 'vector #'+ pos slice-dims src-dims))))
+      (let* ((slice-seq (fset:convert 'fset:seq
+                                      (construct-slices state-map slice-idx-fn #'slice-loc?)))
+             (offslice-decider (offslice-decider-coords slice-seq slice-idx-fn #(0 0) #'equalp))
+             (pinned-slices (wfc-parametrized domain (range-set (fset:size slice-seq))
+                                              nbor-fn offslice-decider)))
+        pinned-slices))))

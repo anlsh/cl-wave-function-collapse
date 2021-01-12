@@ -1,11 +1,32 @@
 
 (uiop:define-package :wfc/src/utils
-  (:use :cl)
+  (:use :cl :arrow-macros)
   (:documentation
    "Internal functionality for super-basic stuff")
-  (:export #:loc-subtract))
+  (:export #:loc-subtract
+           #:lift-set
+           #:random-from-set
+           #:range-set))
 
 (in-package :wfc/src/utils)
 
 (defun loc-subtract (a b)
   (map 'vector #'- a b))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Utility functions that don't exist or that I can't find in FSet
+
+(defun lift-set (fn set)
+  "'Lifts' a set to a map given a function"
+  (fset:reduce (lambda (map el) (fset:with map el (funcall fn el)))
+               set :initial-value (fset:empty-map)))
+
+(defun random-from-set (set)
+  ;; I can't hardcode the error because unreachabel code :/
+  ;; (error "Function not implemented")
+  (print "This really isn't implemented yet!")
+  set)
+
+(defun range-set (n)
+  ;; Returns [0, n) as a set
+  (-<> n (picl:range <>) (picl:iter-to-list <>) (fset:convert 'fset:set <>)))

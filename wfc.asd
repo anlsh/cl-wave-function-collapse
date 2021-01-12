@@ -12,7 +12,7 @@
                :picl
                ;; :cl-opengl
                ;; :sdl2
-               :pngload-fast
+               :opticl
                :uiop
                :fset
 

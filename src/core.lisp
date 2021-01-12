@@ -12,20 +12,6 @@ strategies for checking offsets & representing slices")
 (in-package :wfc/src/core)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Utility functions that don't exist or that I can't find in FSet
-
-(defun lift-set (set fn)
-  "'Lifts' a set to a map given a function"
-  (fset:reduce (lambda (map el) (fset:with map el (funcall fn el)))
-               set :initial-value (fset:empty-map)))
-
-(defun random-from-set (set)
-  ;; I can't hardcode the error because unreachabel code :/
-  ;; (error "Function not implemented")
-  (print "This really isn't implemented yet!")
-  set)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Core functionality
 
 (defun filter-possibs (offslice-decider offset rootslices nborslices)
@@ -83,9 +69,12 @@ function after changes in the set of allowable slices for pos."
 (defun wfc-parametrized (domain slices nbor-fn offslice-decider)
   "Return a map which assigns every element in domain a representative slice"
   (loop with pins = (fset:empty-map)
-        with wave = (lift-set domain (lambda (loc) (declare (ignore loc)) slices))
+        with wave = (lift-set (lambda (loc) (declare (ignore loc)) slices)
+                              domain)
         until (fset:equal? domain (fset:domain pins))
         do (multiple-value-bind
                  (pin-loc pin-loc-slice new-wave) (step-wfc wave nbor-fn offslice-decider)
              (fset:adjoinf pins pin-loc pin-loc-slice)
-             (setf wave new-wave))))
+             (setf wave new-wave))
+        finally
+           (return pins)))
