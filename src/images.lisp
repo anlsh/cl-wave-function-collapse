@@ -25,6 +25,8 @@
     (picl:iter-to-list <>)
     (fset:convert 'fset:set <>)))
 
+(defparameter *origin* #(0 0))
+
 (defun wfc-from-image (source-img-path output-file-path slice-dims out-dims)
   "Samples from source-png and writes to an output image
 
@@ -45,8 +47,16 @@
     (labels ((slice-loc? (pos) (every #'<= (map 'vector #'+ pos slice-dims src-dims))))
       (let* ((slice-seq (fset:convert 'fset:seq
                                       (construct-slices state-map slice-idx-fn #'slice-loc?)))
-             (offslice-decider (offslice-decider-coords slice-seq slice-idx-fn #(0 0) #'equalp))
+             (offslice-decider (offslice-decider-coords slice-seq slice-idx-fn *origin* #'equalp))
              (pinned-slices (wfc-parametrized (domain-for-dims out-dims)
                                               (range-set (fset:size slice-seq))
-                                              nbor-fn offslice-decider)))
-        pinned-slices))))
+                                              nbor-fn offslice-decider))
+             (out-png (make-array (concatenate 'list out-dims (list 3))
+                                  :element-type '(unsigned-byte 8))))
+        (fset:do-map (loc slice-idx pinned-slices)
+          (let* ((slice (fset:@ slice-seq slice-idx))
+                 (rep (fset:@ slice *origin*)))
+            (setf (aref out-png (aref loc 0) (aref loc 1) 0) (elt rep 0)
+                  (aref out-png (aref loc 0) (aref loc 1) 1) (elt rep 1)
+                  (aref out-png (aref loc 0) (aref loc 1) 2) (elt rep 2)))
+          (opticl:write-png-file output-file-path out-png))))))
