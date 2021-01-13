@@ -43,7 +43,8 @@
                                  (fset:with slice-map
                                             (loc-subtract slice-loc loc)
                                             (fset:@ state-map slice-loc)))
-                               (funcall slice-idx-fn loc)))
+                               (funcall slice-idx-fn loc)
+                               :initial-value (fset:empty-map)))
                 <>)))
 
 (defun offslice-decider-raw (slice-idx-fn origin val-eql?)
@@ -52,19 +53,20 @@ a placement is valid"
   (let ((cache (fset:empty-map)))
     (lambda (off s0 s1)
       (let ((key (list off s0 s1)))
-        (if (fset:contains? cache key)
-            (fset:@ cache key)
-            (setf (fset:@ cache key)
-                  (-<> (fset:set origin off)
-                    (fset:image slice-idx-fn <>)
-                    (fset:reduce #'intersection <>)
-                    ;; TODO I'd really like to be able to short-circuit the reduce function...
-                    ;; Right now I it'll keep chugging even after the first mismatch is detected
-                    (fset:reduce (lambda (res pos)
-                                   (and res (funcall val-eql?
-                                                     (fset:@ s0 pos)
-                                                     (fset:@ s1 (loc-subtract pos off)))))
-                                 <> :initial-value t))))))))
+        (multiple-value-bind (val done) (fset:@ cache key)
+          (if done
+              val
+              (setf (fset:@ cache key)
+                    (-<> (fset:set origin off)
+                      (fset:image slice-idx-fn <>)
+                      (fset:reduce #'fset:intersection <>)
+                      ;; TODO I'd really like to be able to short-circuit the reduce function...
+                      ;; Right now I it'll keep chugging even after the first mismatch is detected
+                      (fset:reduce (lambda (res pos)
+                                     (and res (funcall val-eql?
+                                                       (fset:@ s0 pos)
+                                                       (fset:@ s1 (loc-subtract pos off)))))
+                                   <> :initial-value t)))))))))
 
 (defun offslice-decider-coords (slices-seq slice-idx-fn origin val-eql?)
   (let ((raw-decider (offslice-decider-raw slice-idx-fn origin val-eql?)))

@@ -22,10 +22,8 @@
                set :initial-value (fset:empty-map)))
 
 (defun random-from-set (set)
-  ;; I can't hardcode the error because unreachabel code :/
-  ;; (error "Function not implemented")
-  (print "This really isn't implemented yet!")
-  set)
+  (fset:@ (fset:convert 'fset:seq set)
+          (random (fset:size set))))
 
 (defun range-set (n)
   ;; Returns [0, n) as a set
