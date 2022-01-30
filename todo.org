@@ -1,0 +1,4 @@
+#+TITLE: Todo
+
+* TODO Move to lazy sequences instead of fset:sets...
+who knew that sets with millions of elements or more could exhaust the heap???
